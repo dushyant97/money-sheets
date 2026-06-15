@@ -240,6 +240,9 @@ a { color: inherit; text-decoration: none; }
 .fab:hover { transform: translateY(-1px); box-shadow: 0 16px 34px -10px var(--accent-glow); }
 .fab .plus { font-size: 1.2rem; line-height: 1; }
 
+/* Mobile bottom tab bar (hidden on desktop, shown via media query) */
+.mobile-tabbar { display: none; }
+
 .stack { display: grid; gap: 18px; max-width: 1180px; }
 
 /* ---------- Month nav ---------- */
@@ -966,33 +969,118 @@ textarea { min-height: 76px; resize: vertical; }
 .field-group { display: grid; gap: 7px; }
 
 /* ---------- Responsive ---------- */
+
+/* Tablet / small laptop */
 @media (max-width: 1024px) {
   .stats-grid { grid-template-columns: 1fr; }
+  .account-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
-@media (max-width: 920px) {
-  .app-shell { grid-template-columns: 1fr; }
-  .sidebar {
-    position: static;
-    height: auto;
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    border-right: 0;
-    border-bottom: 1px solid var(--border-soft);
-    gap: 12px;
-  }
-  .sidebar-section { display: contents; }
-  .nav-label { display: none; }
-  .side-nav { display: flex; flex-wrap: wrap; }
-  .sidebar-actions { display: flex; flex-wrap: wrap; }
-  .sidebar-spacer { margin: 0; }
-  .offline-pill { margin-left: auto; }
+@media (max-width: 900px) {
   .split { grid-template-columns: 1fr; }
-  .summary-strip { grid-template-columns: 1fr; }
+  .list-panel { max-height: none; }
+}
+
+/* Phones & small tablets: bottom tab navigation */
+@media (max-width: 760px) {
+  .app-shell { grid-template-columns: 1fr; }
+  .sidebar { display: none; }
+
+  .topbar { padding: 13px 16px; }
+  .topbar h1 { font-size: 1.2rem; }
+  .topbar > div:first-child { min-width: 0; }
+  .topbar .status {
+    font-size: 0.74rem;
+    max-width: 62vw;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Compact, icon-only Add button */
+  .fab { padding: 0; width: 42px; height: 42px; border-radius: 50%; justify-content: center; gap: 0; }
+  .fab .plus { font-size: 1.55rem; }
+  .fab-text { display: none; }
+
+  .content { padding: 16px 14px calc(86px + env(safe-area-inset-bottom)); }
+  .stack { gap: 14px; }
+
+  .summary-strip { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .summary-tile { padding: 13px 12px 13px 15px; gap: 5px; }
+  .summary-tile strong { font-size: 1.02rem; }
+  .summary-tile span { font-size: 0.6rem; }
+  .summary-tile .tile-ico { display: none; }
+  .summary-tile small { font-size: 0.62rem; }
+
   .action-cards { grid-template-columns: 1fr; }
-  .content { padding: 18px 16px 48px; }
-  .topbar { padding: 16px 18px; }
+  .account-grid { grid-template-columns: 1fr; }
+  .filter-grid { grid-template-columns: 1fr; }
+  .stats-panel { padding: 14px; }
+
+  /* Manage forms stack vertically */
+  .manage-form,
+  .manage-form.accounts { grid-template-columns: 1fr; }
+  .type-toggle.compact { display: grid; grid-template-columns: 1fr 1fr; }
+
+  /* Bottom tab bar */
+  .mobile-tabbar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    background: rgba(11, 14, 20, 0.94);
+    backdrop-filter: blur(16px);
+    border-top: 1px solid var(--border-soft);
+    padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
+  }
+  .mobile-tabbar .tab {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 8px 4px;
+    border-radius: var(--radius-md);
+    color: var(--text-dim);
+    font-size: 0.64rem;
+    font-weight: 700;
+    transition: color 0.12s;
+  }
+  .mobile-tabbar .tab .tab-ico { font-size: 1.25rem; line-height: 1; }
+  .mobile-tabbar .tab.active { color: var(--accent-2); }
+}
+
+/* Small phones */
+@media (max-width: 480px) {
+  .topbar h1 { font-size: 1.06rem; }
+  .summary-strip { grid-template-columns: 1fr; }
+  .summary-tile { padding: 14px 16px; }
+  .summary-tile strong { font-size: 1.3rem; }
+  .summary-tile span { font-size: 0.68rem; }
+
+  .view-bar { gap: 10px; }
+  .month-nav { width: 100%; justify-content: space-between; }
+  .month-nav strong { min-width: 0; flex: 1; }
+  .pill { padding: 7px 13px; font-size: 0.8rem; }
+
+  .amount-hero { font-size: 2rem; }
+  .hero-stat { padding: 18px; }
+  .hero-stat strong { font-size: 1.7rem; }
+
+  .calendar-weekdays, .calendar-grid { gap: 3px; }
+  .calendar-cell { font-size: 0.72rem; border-radius: 7px; }
+  .calendar-cell em { font-size: 0.5rem; }
+
+  .modal { padding: 18px; border-radius: var(--radius-lg); }
+  .panel { padding: 14px; }
+}
+
+/* Touch devices (any size): row actions can't rely on hover */
+@media (hover: none) {
+  .txn-actions { opacity: 1; }
+  .icon-btn { width: 34px; height: 34px; font-size: 0.92rem; }
 }
 
 /* ---------- Crash / error boundary ---------- */

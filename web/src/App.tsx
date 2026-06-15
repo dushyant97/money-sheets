@@ -25,10 +25,10 @@ import { Calculator } from './Calculator';
 import './styles.css';
 
 const NAV = [
-  { id: 'trans' as const, label: 'Transactions', icon: '📒' },
-  { id: 'stats' as const, label: 'Statistics', icon: '📊' },
-  { id: 'accounts' as const, label: 'Accounts', icon: '🏦' },
-  { id: 'more' as const, label: 'Budgets & Data', icon: '⚙️' }
+  { id: 'trans' as const, label: 'Transactions', shortLabel: 'Records', icon: '📒' },
+  { id: 'stats' as const, label: 'Statistics', shortLabel: 'Stats', icon: '📊' },
+  { id: 'accounts' as const, label: 'Accounts', shortLabel: 'Accounts', icon: '🏦' },
+  { id: 'more' as const, label: 'Budgets & Data', shortLabel: 'More', icon: '⚙️' }
 ];
 
 const TITLES: Record<string, string> = {
@@ -101,8 +101,8 @@ function AppShell() {
             ) : null}
           </div>
           <div className="topbar-actions">
-            <button className="fab" onClick={() => { ledger.cancelEdit(); ledger.setShowAdd(true); }}>
-              <span className="plus">+</span> Add record
+            <button className="fab" onClick={() => { ledger.cancelEdit(); ledger.setShowAdd(true); }} aria-label="Add record">
+              <span className="plus">+</span> <span className="fab-text">Add record</span>
             </button>
           </div>
         </header>
@@ -115,8 +115,29 @@ function AppShell() {
         </div>
       </div>
 
+      <MobileTabBar />
+
       {ledger.showAdd ? <AddModal /> : null}
     </div>
+  );
+}
+
+function MobileTabBar() {
+  const ledger = useLedger();
+  return (
+    <nav className="mobile-tabbar" aria-label="Primary">
+      {NAV.map((item) => (
+        <button
+          key={item.id}
+          className={ledger.mainTab === item.id ? 'tab active' : 'tab'}
+          onClick={() => ledger.setMainTab(item.id)}
+          aria-current={ledger.mainTab === item.id ? 'page' : undefined}
+        >
+          <span className="tab-ico">{item.icon}</span>
+          <span className="tab-label">{item.shortLabel ?? item.label}</span>
+        </button>
+      ))}
+    </nav>
   );
 }
 
