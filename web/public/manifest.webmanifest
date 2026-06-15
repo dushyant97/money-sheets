@@ -1,0 +1,19 @@
+{
+  "name": "Money Sheets",
+  "short_name": "Money Sheets",
+  "description": "Offline-first personal expense and income tracker with CSV backup. No sign-in, no cloud.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b0e14",
+  "theme_color": "#0b0e14",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any maskable"
+    }
+  ]
+}
