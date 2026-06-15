@@ -4,10 +4,9 @@ import {
   TransactionFilters,
   budgetProgressForMonth,
   buildCalendarMonth,
+  buildCategoryTrends,
   carryOverBalance,
   computeAccountBalances,
-  downloadCsv,
-  exportTransactionsCsv,
   filterTransactions,
   monthKey,
   summarizeByCategory,
@@ -15,11 +14,26 @@ import {
   summarizeWeek,
   transactionsInMonth
 } from '../../shared/finance';
-import { categoryPieSlices, formatMoney, formatSignedMoney, getCategoryMeta, groupTransactionsByDate, monthTitle } from '../../shared/uiHelpers';
-import { parseTransactionsCsv } from '../../shared/csvImport';
+import type { TrendGranularity } from '../../shared/finance';
+import {
+  categoryRingArcs,
+  chartColorAt,
+  formatAxisMoney,
+  formatMoney,
+  formatSignedMoney,
+  getAccountMeta,
+  getCategoryMeta,
+  groupTransactionsByDate,
+  monthTitle,
+  setAccountMetaOverrides,
+  setCategoryMetaOverrides
+} from '../../shared/uiHelpers';
+import { exportTransactionsXlsx, readTransactionsFromFile } from './spreadsheet';
 import type { TransactionType } from '../../shared/finance';
 import {
   LedgerSnapshot,
+  type AccountPatch,
+  type CategoryPatch,
   addAccountToLedger,
   addCategoryToLedger,
   appendTransactionToLedger,
@@ -29,12 +43,15 @@ import {
   removeCategoryFromLedger,
   setCarryForwardInLedger,
   softDeleteInLedger,
+  updateAccountInLedger,
+  updateCategoryInLedger,
   updateTransactionInLedger,
   upsertBudgetInLedger
 } from '../../shared/ledgerStore';
 import { clearLocalLedger, loadLocalLedger, saveLocalLedger } from './localLedgerStore';
+import { buildShowcaseLedger } from '../../shared/showcaseData';
 
-export type MainTab = 'trans' | 'stats' | 'accounts' | 'more';
+export type MainTab = 'trans' | 'stats' | 'categories' | 'accounts' | 'more';
 export type HomeView = 'calendar' | 'weekly' | 'monthly' | 'summary';
 export type LoadPhase = 'loading' | 'ready' | 'error';
 
@@ -66,6 +83,7 @@ type LedgerState = {
   categories: Category[];
   budgets: Budget[];
   carryForward: boolean;
+  showcaseMode: boolean;
   busy: boolean;
   loadPhase: LoadPhase;
   message: string;
@@ -89,13 +107,17 @@ type LedgerState = {
   cancelEdit: () => void;
   saveBudget: (category: string, amount: string) => Promise<void>;
   addAccount: (name: string, currency: string, openingBalance: string) => Promise<void>;
+  updateAccount: (originalName: string, patch: AccountPatch) => Promise<void>;
   deleteAccount: (name: string) => Promise<void>;
   addCategory: (name: string, type: TransactionType) => Promise<void>;
+  updateCategory: (originalName: string, patch: CategoryPatch) => Promise<void>;
   deleteCategory: (name: string) => Promise<void>;
   setCarryForward: (value: boolean) => Promise<void>;
-  exportCsv: () => void;
-  importCsv: (file: File) => Promise<void>;
+  exportData: () => Promise<void>;
+  importData: (file: File) => Promise<void>;
   resetAllData: () => Promise<void>;
+  enableShowcaseMode: () => Promise<void>;
+  exitShowcaseMode: () => Promise<void>;
 };
 
 const LedgerContext = createContext<LedgerState | null>(null);
@@ -111,6 +133,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [carryForward, setCarryForwardState] = useState(false);
+  const [showcaseMode, setShowcaseModeState] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loadPhase, setLoadPhase] = useState<LoadPhase>('loading');
   const [message, setMessage] = useState('');
@@ -133,6 +156,9 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     setCategories(applied.categories);
     setBudgets(applied.budgets);
     setCarryForwardState(next.settings?.carryForward ?? false);
+    setShowcaseModeState(next.settings?.showcaseMode ?? false);
+    setCategoryMetaOverrides(applied.categories);
+    setAccountMetaOverrides(applied.accounts);
   }
 
   async function persist(next: LedgerSnapshot) {
@@ -287,6 +313,22 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  async function updateAccount(originalName: string, patch: AccountPatch) {
+    if (!snapshot) return;
+    setBusy(true);
+    try {
+      const next = updateAccountInLedger(snapshot, originalName, patch);
+      await persist(next);
+      const nextName = patch.name?.trim() || originalName;
+      setForm((current) => (current.account === originalName ? { ...current, account: nextName } : current));
+      setMessage(`Account "${nextName}" updated.`);
+    } catch (error) {
+      setMessage(errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function deleteAccount(name: string) {
     if (!snapshot || !window.confirm(`Remove account "${name}"?\n\nExisting transactions keep their data, but this account will no longer be selectable.`)) return;
     setBusy(true);
@@ -309,6 +351,22 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
       const next = addCategoryToLedger(snapshot, { name, type, active: true });
       await persist(next);
       setMessage(`Category "${name.trim()}" added.`);
+    } catch (error) {
+      setMessage(errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function updateCategory(originalName: string, patch: CategoryPatch) {
+    if (!snapshot) return;
+    setBusy(true);
+    try {
+      const next = updateCategoryInLedger(snapshot, originalName, patch);
+      await persist(next);
+      const nextName = patch.name?.trim() || originalName;
+      setForm((current) => (current.category === originalName ? { ...current, category: nextName } : current));
+      setMessage(`Category "${nextName}" updated.`);
     } catch (error) {
       setMessage(errorMessage(error));
     } finally {
@@ -345,12 +403,19 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  function exportCsv() {
-    downloadCsv(`money-sheets-${currentMonth}.csv`, exportTransactionsCsv(transactions));
-    setMessage('CSV downloaded. Open it in Excel or Google Sheets.');
+  async function exportData() {
+    setBusy(true);
+    try {
+      await exportTransactionsXlsx(`money-sheets-${currentMonth}.xlsx`, transactions);
+      setMessage('Excel workbook downloaded. Open it in Excel or Google Sheets.');
+    } catch (error) {
+      setMessage(errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
   }
 
-  async function importCsv(file: File) {
+  async function importData(file: File) {
     if (!snapshot) return;
 
     const confirmed = window.confirm(
@@ -360,14 +425,58 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 
     setBusy(true);
     try {
-      const text = await file.text();
-      const imported = parseTransactionsCsv(text);
+      const imported = await readTransactionsFromFile(file);
       const next = ledgerFromImportedTransactions(imported);
       await persist(next);
       setForm(emptyForm());
       setEditingId(null);
       setShowAdd(false);
       setMessage(`Imported ${imported.length} transactions. Previous data was replaced.`);
+    } catch (error) {
+      setMessage(errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function enableShowcaseMode() {
+    if (!snapshot) return;
+
+    setBusy(true);
+    try {
+      const demo = buildShowcaseLedger();
+      await persist(demo);
+      setForm(emptyForm());
+      setEditingId(null);
+      setShowAdd(false);
+      setSelectedMonth(new Date());
+      setMessage(`Showcase mode on — ${demo.transactions.length} demo transactions loaded.`);
+    } catch (error) {
+      setMessage(errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function exitShowcaseMode() {
+    if (!snapshot) return;
+
+    const confirmed = window.confirm(
+      'Exit Showcase Mode?\n\n' +
+        'All demo data will be removed and the app will reset to an empty ledger.\n\n' +
+        'Export first if you want to keep anything.\n\n' +
+        'Continue?'
+    );
+    if (!confirmed) return;
+
+    setBusy(true);
+    try {
+      const fresh = await clearLocalLedger();
+      syncFromSnapshot(fresh);
+      setForm(emptyForm());
+      setEditingId(null);
+      setShowAdd(false);
+      setMessage('Showcase mode off. Ledger cleared.');
     } catch (error) {
       setMessage(errorMessage(error));
     } finally {
@@ -402,6 +511,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     categories,
     budgets,
     carryForward,
+    showcaseMode,
     busy,
     loadPhase,
     message,
@@ -425,13 +535,17 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     cancelEdit,
     saveBudget,
     addAccount,
+    updateAccount,
     deleteAccount,
     addCategory,
+    updateCategory,
     deleteCategory,
     setCarryForward,
-    exportCsv,
-    importCsv,
-    resetAllData
+    exportData,
+    importData,
+    resetAllData,
+    enableShowcaseMode,
+    exitShowcaseMode
   };
 
   return <LedgerContext.Provider value={value}>{children}</LedgerContext.Provider>;
@@ -446,18 +560,23 @@ export function useLedger() {
 export {
   formatMoney,
   formatSignedMoney,
+  getAccountMeta,
   getCategoryMeta,
   groupTransactionsByDate,
-  categoryPieSlices,
+  categoryRingArcs,
+  chartColorAt,
+  formatAxisMoney,
   monthTitle,
   monthKey,
   summarizeMonth,
   summarizeWeek,
   summarizeByCategory,
   buildCalendarMonth,
+  buildCategoryTrends,
   computeAccountBalances,
   carryOverBalance,
   transactionsInMonth,
   budgetProgressForMonth,
   filterTransactions
 };
+export type { TrendGranularity };

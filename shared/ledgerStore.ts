@@ -6,6 +6,8 @@ export const LOCAL_STORAGE_KEY = 'money-sheets-ledger-v1';
 export type LedgerSettings = {
   /** Carry the running balance over from previous months. Disabled by default. */
   carryForward: boolean;
+  /** True when the ledger was loaded with demo/showcase data. */
+  showcaseMode?: boolean;
 };
 
 export const DEFAULT_SETTINGS: LedgerSettings = {
@@ -167,7 +169,9 @@ export function addAccountToLedger(snapshot: LedgerSnapshot, account: Account): 
     name,
     currency: account.currency.trim() || 'INR',
     openingBalance: Number.isFinite(account.openingBalance) ? account.openingBalance : 0,
-    active: true
+    active: true,
+    emoji: account.emoji?.trim() || undefined,
+    color: account.color || undefined
   };
   return touchLedger({ ...snapshot, accounts: [...snapshot.accounts, next] });
 }
@@ -176,6 +180,58 @@ export function removeAccountFromLedger(snapshot: LedgerSnapshot, name: string):
   return touchLedger({
     ...snapshot,
     accounts: snapshot.accounts.filter((row) => row.name !== name)
+  });
+}
+
+export type AccountPatch = {
+  name?: string;
+  currency?: string;
+  openingBalance?: number;
+  emoji?: string;
+  color?: string;
+};
+
+/**
+ * Edit an account in place. Renaming also rewrites the account name on every
+ * transaction that referenced it so history stays linked.
+ */
+export function updateAccountInLedger(
+  snapshot: LedgerSnapshot,
+  originalName: string,
+  patch: AccountPatch
+): LedgerSnapshot {
+  const existing = snapshot.accounts.find((row) => row.name === originalName);
+  if (!existing) throw new Error(`Account "${originalName}" not found.`);
+
+  const nextName = patch.name?.trim() || existing.name;
+  if (
+    nextName.toLowerCase() !== originalName.toLowerCase() &&
+    snapshot.accounts.some((row) => row.name.toLowerCase() === nextName.toLowerCase())
+  ) {
+    throw new Error(`An account named "${nextName}" already exists.`);
+  }
+
+  const updated: Account = {
+    ...existing,
+    name: nextName,
+    currency: patch.currency?.trim() || existing.currency,
+    openingBalance:
+      patch.openingBalance !== undefined && Number.isFinite(patch.openingBalance)
+        ? patch.openingBalance
+        : existing.openingBalance,
+    emoji: patch.emoji !== undefined ? patch.emoji.trim() || undefined : existing.emoji,
+    color: patch.color !== undefined ? patch.color || undefined : existing.color
+  };
+
+  const renamed = nextName !== originalName;
+  return touchLedger({
+    ...snapshot,
+    accounts: snapshot.accounts.map((row) => (row.name === originalName ? updated : row)),
+    transactions: renamed
+      ? snapshot.transactions.map((row) =>
+          row.account === originalName ? { ...row, account: nextName } : row
+        )
+      : snapshot.transactions
   });
 }
 
@@ -190,7 +246,9 @@ export function addCategoryToLedger(snapshot: LedgerSnapshot, category: Category
   const next: Category = {
     name,
     type: category.type,
-    active: true
+    active: true,
+    emoji: category.emoji?.trim() || undefined,
+    color: category.color || undefined
   };
   return touchLedger({ ...snapshot, categories: [...snapshot.categories, next] });
 }
@@ -199,6 +257,56 @@ export function removeCategoryFromLedger(snapshot: LedgerSnapshot, name: string)
   return touchLedger({
     ...snapshot,
     categories: snapshot.categories.filter((row) => row.name !== name)
+  });
+}
+
+export type CategoryPatch = {
+  name?: string;
+  emoji?: string;
+  color?: string;
+};
+
+/**
+ * Edit a category in place. Renaming also rewrites the category name on every
+ * transaction and budget that referenced it so history and budgets stay linked.
+ */
+export function updateCategoryInLedger(
+  snapshot: LedgerSnapshot,
+  originalName: string,
+  patch: CategoryPatch
+): LedgerSnapshot {
+  const existing = snapshot.categories.find((row) => row.name === originalName);
+  if (!existing) throw new Error(`Category "${originalName}" not found.`);
+
+  const nextName = patch.name?.trim() || existing.name;
+  if (
+    nextName.toLowerCase() !== originalName.toLowerCase() &&
+    snapshot.categories.some((row) => row.name.toLowerCase() === nextName.toLowerCase())
+  ) {
+    throw new Error(`A category named "${nextName}" already exists.`);
+  }
+
+  const updated: Category = {
+    ...existing,
+    name: nextName,
+    emoji: patch.emoji !== undefined ? patch.emoji.trim() || undefined : existing.emoji,
+    color: patch.color !== undefined ? patch.color || undefined : existing.color
+  };
+
+  const renamed = nextName !== originalName;
+  return touchLedger({
+    ...snapshot,
+    categories: snapshot.categories.map((row) => (row.name === originalName ? updated : row)),
+    transactions: renamed
+      ? snapshot.transactions.map((row) =>
+          row.category === originalName ? { ...row, category: nextName } : row
+        )
+      : snapshot.transactions,
+    budgets: renamed
+      ? snapshot.budgets.map((row) =>
+          row.category === originalName ? { ...row, category: nextName } : row
+        )
+      : snapshot.budgets
   });
 }
 

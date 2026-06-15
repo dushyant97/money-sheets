@@ -1,16 +1,17 @@
 # Money Sheets
 
-A personal expense and income tracker built as an **offline-first** web and mobile app with **local storage** and **CSV backup**. No sign-in, no cloud, no ads.
+A personal expense and income tracker built as an **offline-first** web and mobile app with **local storage** and **CSV / Excel backup**. No sign-in, no cloud, no ads.
 
 ## What this app does
 
 Money Sheets gives users a simple finance tracker across web and mobile:
 
-- **Web app:** Vite + React
+- **Web app:** Vite + React, with a **light/dark theme toggle**
 - **Mobile app:** Expo React Native
 - **Shared logic:** pure TypeScript in `shared/`
 - **Datastore:** on-device only (no Google Cloud, no backend, no billing)
-- **Backup / sync:** manual CSV export and import (Excel-friendly)
+- **Backup / sync:** manual export and import. The **web app reads `.csv` and `.xlsx`/`.xls` and exports `.xlsx`** (Excel) workbooks; the mobile app uses CSV.
+- **Import compatibility:** besides its own export, the importer also reads common spreadsheet dumps (a sheet with `Date`, `Category`, `Amount`, `Income/Expense` columns — e.g. exports from other money managers), auto-detecting the format and sorting by date.
 
 There is no sign-in step. The app opens directly to the dashboard. Data stays on the device until the user exports it.
 
@@ -23,27 +24,29 @@ To move data between devices, export a CSV from one device and import it on anot
 | No Google Cloud project | Zero OAuth setup, no API keys for end users |
 | No Google Sheets / Drive APIs | No quota, consent screen, or API billing concerns |
 | Local storage | Fast reads/writes, works without network after load |
-| CSV export | Open in Excel, Google Sheets, or any spreadsheet app |
-| CSV import | Restore backups or copy data to a new phone/browser |
+| CSV / Excel export | Open in Excel, Google Sheets, or any spreadsheet app |
+| CSV / Excel import | Restore backups, or migrate data from other money managers |
 
-Trade-off: there is **no automatic cloud sync**. Users manage backups themselves via CSV.
+Trade-off: there is **no automatic cloud sync**. Users manage backups themselves via CSV / Excel files.
 
 ## Table of contents
 
 1. [End-user app flow](#end-user-app-flow)
-2. [Backup and restore (CSV)](#backup-and-restore-csv)
+2. [Backup and restore (CSV / Excel)](#backup-and-restore-csv--excel)
 3. [Developer setup](#developer-setup)
 4. [Run locally](#run-locally)
 5. [Architecture](#architecture)
 6. [Local data model](#local-data-model)
 7. [Read and write paths](#read-and-write-paths)
-8. [CSV format](#csv-format)
-9. [Features](#features)
-10. [Production and deployment](#production-and-deployment)
-11. [Google Play compliance](#google-play-compliance)
-12. [Privacy](#privacy)
-13. [Troubleshooting](#troubleshooting)
-14. [Suggested extensions](#suggested-extensions)
+8. [Import & export formats](#import--export-formats)
+9. [Theming](#theming)
+10. [Statistics: breakdown & trends](#statistics-breakdown--trends)
+11. [Features](#features)
+12. [Production and deployment](#production-and-deployment)
+13. [Google Play compliance](#google-play-compliance)
+14. [Privacy](#privacy)
+15. [Troubleshooting](#troubleshooting)
+16. [Suggested extensions](#suggested-extensions)
 
 ## End-user app flow
 
@@ -79,41 +82,48 @@ Open app
 
 ```mermaid
 flowchart LR
+  Top[Top bar] --> Theme[Light / dark theme toggle]
   T[Trans.] --> Add[Add / edit transaction]
   Add --> Calc[Calculator amount entry]
   T --> Calendar[Calendar / weekly / monthly views<br/>month-scoped records]
-  S[Stats] --> Charts[Category charts]
+  S[Stats] --> Breakdown[Breakdown: donut ring + category tiles<br/>tap a category to hide]
+  S --> Trends[Trends: per-category line chart<br/>week / month / year]
   A[Accounts] --> Balances[Balances<br/>month-scoped or running]
   M[More] --> Settings[Settings: carry forward]
   M --> Manage[Manage categories & accounts]
   M --> Budgets[Budgets]
-  M --> Export[Export CSV]
-  M --> Import[Import CSV]
+  M --> Export[Export Excel .xlsx]
+  M --> Import[Import CSV / Excel]
   M --> Erase[Erase all data]
 
   Add --> Store[(Local storage)]
   Manage --> Store
   Settings --> Store
   Budgets --> Store
-  Export --> File[CSV file]
+  Theme --> Store
+  Export --> File[.xlsx workbook]
   Import --> Store
 ```
 
-## Backup and restore (CSV)
+## Backup and restore (CSV / Excel)
 
 ### Export
 
 1. Open **More** (or the sidebar on web).
-2. Tap **Export CSV**.
-3. **Web:** downloads `money-sheets-YYYY-MM.csv`.
-4. **Mobile:** opens the system share sheet so the user can save or send the file.
+2. Tap **Export Excel** (web) / **Export CSV** (mobile).
+3. **Web:** downloads `money-sheets-YYYY-MM.xlsx` (a real Excel workbook with a `Transactions` sheet).
+4. **Mobile:** opens the system share sheet so the user can save or send a CSV file.
 
-The CSV opens in Excel, LibreOffice, or Google Sheets.
+Both formats open in Excel, LibreOffice, or Google Sheets.
 
 ### Import
 
-1. Open **More** → **Import CSV**.
-2. Choose a `.csv` file previously exported from Money Sheets (or matching the export format).
+1. Open **More** → **Import CSV / Excel** (web) / **Import CSV** (mobile).
+2. Choose a file:
+   - On **web**, you can pick `.csv`, `.xlsx`, or `.xls`.
+   - It can be a previous Money Sheets export, **or** a spreadsheet from another money manager
+     (any sheet with `Date`, `Category`, `Amount`, and an `Income/Expense` column — see
+     [Import & export formats](#import--export-formats)).
 3. Confirm the warning:
 
 ```text
@@ -121,17 +131,20 @@ All existing data on this device will be removed and replaced
 with transactions from the file. Budgets will also be reset.
 ```
 
-4. The app parses the CSV, rebuilds accounts and categories from transaction rows, and saves the new ledger locally.
+4. The app parses the file (Excel is converted to rows in-memory via SheetJS), auto-detects the
+   column layout, **sorts the rows by date**, rebuilds accounts and categories from the transaction
+   rows, and saves the new ledger locally.
 
 ### Move data between devices
 
 ```text
-Phone A  --Export CSV-->  email / cloud folder / USB
-                              |
-Phone B  <--Import CSV--------+
+Phone A  --Export CSV / Excel-->  email / cloud folder / USB
+                                      |
+Phone B / Web  <--Import------------- +
 ```
 
-Web and mobile use the **same CSV column layout**, so exports are interchangeable.
+Money Sheets exports use the **same column layout** on web and mobile, so they are interchangeable;
+the web app additionally accepts third-party spreadsheet dumps.
 
 ### What CSV does not include
 
@@ -153,10 +166,12 @@ Use this checklist when joining the project or standing up a new environment.
 | Where is user data stored? | On the device: `localStorage` (web) or AsyncStorage (mobile) |
 | Storage key | `money-sheets-ledger-v1` |
 | Is there a custom backend? | No |
-| How do web and mobile sync? | Manual CSV export/import by the user |
+| How do web and mobile sync? | Manual CSV / Excel export/import by the user |
 | Where is shared business logic? | `shared/finance.ts`, `shared/uiHelpers.ts`, `shared/theme.ts`, `shared/ledgerStore.ts`, `shared/csvImport.ts` |
 | Where is persistence? | `web/src/localLedgerStore.ts`, `mobile/src/localLedgerStore.ts` |
 | Where is app state? | `web/src/ledger.tsx`, `mobile/src/context/LedgerContext.tsx` |
+| Where is the web theme? | `web/src/theme.tsx` (light/dark context), CSS variables in `web/src/styles.css` |
+| Where is Excel read/write? | `web/src/spreadsheet.ts` (SheetJS, lazy-loaded) |
 
 ### 2. No Google Cloud setup required
 
@@ -235,6 +250,19 @@ Expo Go works for basic UI testing. Document picker import is most reliable on a
 > Play Store / App Store. Older Expo Go versions show "Project is incompatible with this version of
 > Expo Go." For full fidelity (document picker, native modules), use a development build.
 
+### Web dependencies
+
+| Package | Purpose |
+| --- | --- |
+| `react`, `react-dom` | UI |
+| `vite`, `@vitejs/plugin-react` | Dev server & production build |
+| `xlsx` (SheetJS) | Read `.xlsx`/`.xls` on import and write `.xlsx` on export. Imported via dynamic `import()` in `web/src/spreadsheet.ts`, so it ships as a **separate lazy-loaded chunk** and stays out of the initial bundle. |
+
+> **SheetJS install note:** the maintained build is published on the SheetJS CDN
+> (`npm i https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`). If your network blocks that CDN
+> (corporate TLS proxy → `SELF_SIGNED_CERT_IN_CHAIN`), the npm-registry `xlsx` works too. The app
+> only ever parses files the user explicitly selects, all on-device.
+
 ## Architecture
 
 ### System context
@@ -248,10 +276,10 @@ flowchart TB
   end
 
   subgraph shared[Shared TypeScript]
-    Finance[shared/finance.ts<br/>summaries, filters, CSV export]
+    Finance[shared/finance.ts<br/>summaries, filters, trends, export rows]
     Ledger[shared/ledgerStore.ts<br/>snapshot, CRUD helpers]
-    Csv[shared/csvImport.ts<br/>CSV parse]
-    UI[shared/uiHelpers.ts]
+    Csv[shared/csvImport.ts<br/>multi-format CSV parse]
+    UI[shared/uiHelpers.ts<br/>chart palette, ring arcs, formatters]
     Theme[shared/theme.ts]
   end
 
@@ -279,16 +307,18 @@ flowchart TB
 ```text
 money-sheets-starter/
 ├── shared/
-│   ├── finance.ts          # Types, summaries, filters, balances, carry-forward, CSV export
+│   ├── finance.ts          # Types, summaries, filters, balances, carry-forward, trends, export rows
 │   ├── ledgerStore.ts      # LedgerSnapshot, settings, defaults, CRUD, import merge
-│   ├── csvImport.ts        # parseTransactionsCsv
+│   ├── csvImport.ts        # parseTransactionsCsv (native + generic/Money-Manager formats, date sort)
 │   ├── calc.ts             # Safe calculator expression evaluator (shared by web + mobile)
-│   ├── uiHelpers.ts
-│   └── theme.ts
+│   ├── uiHelpers.ts        # Category meta, CHART_PALETTE, ring/pie geometry, money formatters
+│   └── theme.ts            # Mobile design tokens
 ├── web/
 │   └── src/
-│       ├── App.tsx
+│       ├── App.tsx                 # Shell, Transactions, Stats (ring + trends), Accounts, More
 │       ├── Calculator.tsx          # Calculator modal (amount entry)
+│       ├── theme.tsx               # Light/dark ThemeProvider + useTheme (persisted, no-FOUC)
+│       ├── spreadsheet.ts          # SheetJS read (.csv/.xlsx) + .xlsx export (lazy-loaded)
 │       ├── ledger.tsx              # React context, load/save/import/export, settings
 │       └── localLedgerStore.ts     # localStorage adapter
 └── mobile/
@@ -433,15 +463,19 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-  Pick[User picks .csv file] --> Confirm[Confirm overwrite dialog]
+  Pick[User picks .csv / .xlsx file] --> Confirm[Confirm overwrite dialog]
   Confirm -->|Cancel| Stop[No changes]
-  Confirm -->|OK| Parse[parseTransactionsCsv]
+  Confirm -->|OK| Read[readTransactionsFromFile<br/>web: .xlsx → CSV via SheetJS]
+  Read --> Parse[parseTransactionsCsv<br/>detect format + sort by date]
   Parse --> Merge[ledgerFromImportedTransactions]
   Merge --> Save[saveLocalLedger]
   Save --> UI[Show imported data]
 ```
 
-`ledgerFromImportedTransactions()` replaces the entire snapshot: new transactions, rebuilt accounts/categories, empty budgets.
+On web, `readTransactionsFromFile()` (`web/src/spreadsheet.ts`) converts Excel workbooks to CSV
+text before parsing; mobile reads CSV text directly. `parseTransactionsCsv()` then auto-detects the
+column layout and sorts rows chronologically, and `ledgerFromImportedTransactions()` replaces the
+entire snapshot: new transactions, rebuilt accounts/categories, empty budgets.
 
 ### Delete transaction
 
@@ -454,32 +488,63 @@ updatedAt: <ISO timestamp>
 
 Rows remain in storage for possible future undelete or audit features.
 
-## CSV format
+## Import & export formats
 
-Export uses `exportTransactionsCsv()` in `shared/finance.ts`. Import uses `parseTransactionsCsv()` in `shared/csvImport.ts`.
+- **Export rows** are built by `transactionsToRows()` in `shared/finance.ts` (shared by the CSV
+  string builder `exportTransactionsCsv()` and the web `.xlsx` writer in `web/src/spreadsheet.ts`).
+- **Import** uses `parseTransactionsCsv()` in `shared/csvImport.ts`. On web, Excel files are first
+  converted to CSV by `readTransactionsFromFile()` (SheetJS), then handed to the same parser.
 
-### Header row (required)
+The importer **auto-detects** one of two layouts from the header row.
+
+### 1. Native format (Money Sheets export)
 
 ```text
 id,date,type,amount,currency,account,category,note,createdAt,createdBy,source,deleted,updatedAt,receiptUrl
 ```
 
-### Example rows
-
 ```csv
 id,date,type,amount,currency,account,category,note,createdAt,createdBy,source,deleted,updatedAt,receiptUrl
-1718366400000-abc,2026-06-14,expense,250,INR,Cash,Food,Lunch,2026-06-14T12:00:00.000Z,local-user,web,FALSE,,
+1718366400000-abc,2026-06-14,expense,250,INR,Cash,Food Outing,Lunch,2026-06-14T12:00:00.000Z,local-user,web,FALSE,,
 1718366500000-def,2026-06-14,income,50000,INR,Bank,Salary,June salary,2026-06-14T12:05:00.000Z,local-user,web,FALSE,,
 ```
 
-### Import rules
+- Detected when the header has both `id` and `type`.
+- `type` is `income` / `expense` (anything else → `expense`); `deleted` accepts `TRUE` / `FALSE`.
 
-- File must be `.csv` with the header row above.
-- Required columns: `id`, `date`, `type`, `amount`.
-- `type` must be `income` or `expense` (anything else is treated as `expense`).
-- `deleted` accepts `TRUE` / `FALSE` (case-insensitive).
+### 2. Generic / money-manager dump (import only)
+
+A spreadsheet exported from another tracker, with a header similar to:
+
+```text
+Date,Account,Category,Subcategory,Note,INR,Income/Expense,Description,Amount,Currency,Account
+```
+
+```csv
+Date,Account,Category,Subcategory,Note,INR,Income/Expense,Description,Amount,Currency,Account
+16/06/2026 17:53:46,HDFC Savings,Doctor,,Medicine,1563,Expense,,1563.00,INR,1563
+14/06/2026 09:10:00,HDFC Savings,Salary,,June,50000,Income,,50000,INR,50000
+```
+
+How these rows are mapped:
+
+| Source column | Mapped to | Notes |
+| --- | --- | --- |
+| `Date` | `date` + sort key | Accepts `DD/MM/YYYY HH:MM:SS` and ISO `YYYY-MM-DD`; time is used for sorting |
+| `Income/Expense` | `type` | `income` / `expense`; rows containing **`Transfer`** are skipped |
+| `Amount` (else `INR`) | `amount` | Commas / currency symbols stripped; absolute value used |
+| `Currency` | `currency` | Defaults to `INR` |
+| `Account` | `account` | The **first** `Account` column is used if the header repeats it |
+| `Category` | `category` | |
+| `Note` + `Description` + `Subcategory` | `note` | Joined with ` · ` |
+| — | `id` | Generated (`imp-<sortKey>-<index>`); no `id` column required |
+
+### Common import rules
+
+- File must be `.csv` (web also accepts `.xlsx` / `.xls`).
 - At least one valid data row is required.
-- Import **replaces** all local data after user confirmation.
+- Rows are **sorted by date** (then time) — not by `id`.
+- Import **replaces** all local data after user confirmation; budgets are reset.
 
 ## Features
 

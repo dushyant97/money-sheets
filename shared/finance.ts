@@ -33,12 +33,20 @@ export type Account = {
   currency: string;
   openingBalance: number;
   active: boolean;
+  /** Optional custom emoji shown on the account badge. */
+  emoji?: string;
+  /** Optional custom accent colour (hex). */
+  color?: string;
 };
 
 export type Category = {
   name: string;
   type: TransactionType;
   active: boolean;
+  /** Optional custom emoji shown wherever the category appears. */
+  emoji?: string;
+  /** Optional custom accent colour (hex). */
+  color?: string;
 };
 
 export type Budget = {
@@ -209,8 +217,8 @@ export function summarizeByCategory(
     grouped.set(transaction.category, (grouped.get(transaction.category) ?? 0) + transaction.amount);
   }
 
-  return [...grouped.entries()]
-    .map(([category, amount]) => ({
+  return Array.from(grouped.entries())
+    .map(([category, amount]: [string, number]) => ({
       category,
       amount,
       percent: total > 0 ? (amount / total) * 100 : 0
@@ -351,24 +359,138 @@ export function budgetProgressForMonth(
   });
 }
 
-export function exportTransactionsCsv(transactions: Transaction[]) {
-  const headers = [
-    'id',
-    'date',
-    'type',
-    'amount',
-    'currency',
-    'account',
-    'category',
-    'note',
-    'createdAt',
-    'createdBy',
-    'source',
-    'deleted',
-    'updatedAt',
-    'receiptUrl'
-  ];
+export type TrendGranularity = 'week' | 'month' | 'year';
 
+export type CategoryTrend = {
+  category: string;
+  /** One value per bucket, aligned with the returned `labels`. */
+  points: number[];
+  /** Sum of all points (used to rank categories). */
+  total: number;
+};
+
+export type TrendResult = {
+  /** Short labels for each time bucket, oldest first. */
+  labels: string[];
+  /** Totals across all categories for each bucket. */
+  totals: number[];
+  /** Per-category series, ranked by total (highest first). */
+  categories: CategoryTrend[];
+  /** Largest single value across the selected series (>= 1), for chart scaling. */
+  max: number;
+};
+
+function startOfWeek(date: Date): Date {
+  const next = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const day = next.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  next.setDate(next.getDate() + diff);
+  return next;
+}
+
+function bucketKeyFor(date: Date, granularity: TrendGranularity): string {
+  if (granularity === 'year') return String(date.getFullYear());
+  if (granularity === 'month') return monthKey(date);
+  const start = startOfWeek(date);
+  return start.toISOString().slice(0, 10);
+}
+
+function bucketLabelFor(key: string, granularity: TrendGranularity): string {
+  if (granularity === 'year') return key;
+  if (granularity === 'month') {
+    const [year, month] = key.split('-').map(Number);
+    return new Date(year, month - 1, 1).toLocaleString('default', { month: 'short' });
+  }
+  const start = new Date(`${key}T00:00:00`);
+  return start.toLocaleDateString(undefined, { day: '2-digit', month: 'short' });
+}
+
+function stepBucket(date: Date, granularity: TrendGranularity, steps: number): Date {
+  const next = new Date(date);
+  if (granularity === 'year') next.setFullYear(next.getFullYear() + steps);
+  else if (granularity === 'month') next.setMonth(next.getMonth() + steps);
+  else next.setDate(next.getDate() + steps * 7);
+  return next;
+}
+
+/**
+ * Month-over-month (or week/year) totals per category, used to draw trend lines.
+ * Returns ordered buckets (oldest first) and the top `topN` categories by total spend.
+ */
+export function buildCategoryTrends(
+  transactions: Transaction[],
+  options: {
+    granularity: TrendGranularity;
+    type?: TransactionType;
+    periods?: number;
+    endDate?: Date;
+    topN?: number;
+  }
+): TrendResult {
+  const { granularity, type = 'expense', topN = 5 } = options;
+  const periods = options.periods ?? (granularity === 'week' ? 8 : granularity === 'month' ? 6 : 5);
+  const endDate = options.endDate ?? new Date();
+
+  const anchor = granularity === 'week' ? startOfWeek(endDate) : endDate;
+  const bucketKeys: string[] = [];
+  const labels: string[] = [];
+  for (let index = periods - 1; index >= 0; index -= 1) {
+    const bucketDate = stepBucket(anchor, granularity, -index);
+    const key = bucketKeyFor(bucketDate, granularity);
+    bucketKeys.push(key);
+    labels.push(bucketLabelFor(key, granularity));
+  }
+  const indexByKey = new Map(bucketKeys.map((key, index) => [key, index]));
+
+  const totals: number[] = new Array<number>(periods).fill(0);
+  const byCategory = new Map<string, number[]>();
+
+  for (const transaction of activeTransactions(transactions)) {
+    if (transaction.type !== type) continue;
+    const parsed = new Date(`${transaction.date}T00:00:00`);
+    const key = bucketKeyFor(parsed, granularity);
+    const slot = indexByKey.get(key);
+    if (slot === undefined) continue;
+
+    totals[slot] += transaction.amount;
+    const series = byCategory.get(transaction.category) ?? new Array<number>(periods).fill(0);
+    series[slot] += transaction.amount;
+    byCategory.set(transaction.category, series);
+  }
+
+  const categories: CategoryTrend[] = Array.from(byCategory.entries())
+    .map(([category, points]: [string, number[]]) => ({
+      category,
+      points,
+      total: points.reduce((sum: number, value: number) => sum + value, 0)
+    }))
+    .sort((left, right) => right.total - left.total)
+    .slice(0, topN);
+
+  const max = Math.max(1, ...categories.flatMap((series) => series.points));
+
+  return { labels, totals, categories, max };
+}
+
+export const EXPORT_HEADERS = [
+  'id',
+  'date',
+  'type',
+  'amount',
+  'currency',
+  'account',
+  'category',
+  'note',
+  'createdAt',
+  'createdBy',
+  'source',
+  'deleted',
+  'updatedAt',
+  'receiptUrl'
+] as const;
+
+/** Header row + one array per transaction, shared by CSV and XLSX exports. */
+export function transactionsToRows(transactions: Transaction[]): (string | number)[][] {
   const rows = transactions.map((transaction) => [
     transaction.id,
     transaction.date,
@@ -385,6 +507,11 @@ export function exportTransactionsCsv(transactions: Transaction[]) {
     transaction.updatedAt ?? '',
     transaction.receiptUrl ?? ''
   ]);
+  return [[...EXPORT_HEADERS], ...rows];
+}
+
+export function exportTransactionsCsv(transactions: Transaction[]) {
+  const allRows = transactionsToRows(transactions);
 
   const escape = (value: string | number) => {
     const text = String(value);
@@ -394,7 +521,7 @@ export function exportTransactionsCsv(transactions: Transaction[]) {
     return text;
   };
 
-  return [headers, ...rows].map((row) => row.map(escape).join(',')).join('\n');
+  return allRows.map((row) => row.map(escape).join(',')).join('\n');
 }
 
 export function downloadCsv(filename: string, content: string) {
