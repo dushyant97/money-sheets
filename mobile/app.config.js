@@ -15,7 +15,7 @@ module.exports = ({ config }) => ({
   name: 'Money Sheets',
   slug: 'money-sheets',
   scheme: 'moneysheets',
-  version: '1.0.0',
+  version: '2.0.0',
   orientation: 'portrait',
   userInterfaceStyle: 'dark',
   backgroundColor: '#0b0e14',
@@ -33,6 +33,6 @@ module.exports = ({ config }) => ({
   },
   android: {
     package: ANDROID_PACKAGE,
-    versionCode: 1
+    versionCode: 2
   }
 });
