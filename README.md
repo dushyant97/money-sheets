@@ -13,7 +13,7 @@ Money Sheets gives users a simple finance tracker across web and mobile:
 - **Web app:** Vite + React, with a **light/dark theme toggle**
 - **Mobile app:** Expo React Native
 - **Shared logic:** pure TypeScript in `shared/`
-- **Datastore:** on-device only (no Google Cloud, no backend, no billing)
+- **Datastore:** on-device only
 - **Backup / sync:** manual export and import. The **web app reads `.csv` and `.xlsx`/`.xls` and exports `.xlsx`** (Excel) workbooks; the mobile app uses CSV.
 - **Import compatibility:** besides its own export, the importer also reads common spreadsheet dumps (a sheet with `Date`, `Category`, `Amount`, `Income/Expense` columns — e.g. exports from other money managers), auto-detecting the format and sorting by date.
 
@@ -25,8 +25,6 @@ To move data between devices, export a CSV from one device and import it on anot
 
 | Approach | Benefit |
 | --- | --- |
-| No Google Cloud project | Zero OAuth setup, no API keys for end users |
-| No Google Sheets / Drive APIs | No quota, consent screen, or API billing concerns |
 | Local storage | Fast reads/writes, works without network after load |
 | CSV / Excel export | Open in Excel, Google Sheets, or any spreadsheet app |
 | CSV / Excel import | Restore backups, or migrate data from other money managers |
