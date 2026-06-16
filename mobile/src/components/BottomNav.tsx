@@ -1,118 +1,74 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { colors, radius } from '../../../shared/theme';
+import { radius } from '../../../shared/theme';
+import { NAV } from '../../../shared/nav';
 import type { MainTab } from '../context/LedgerContext';
+import { useTheme } from '../theme/ThemeProvider';
 
-const TABS: Array<{ id: MainTab; label: string; icon: string }> = [
-  { id: 'trans', label: 'Trans.', icon: '📒' },
-  { id: 'stats', label: 'Stats', icon: '📊' },
-  { id: 'accounts', label: 'Accounts', icon: '🏦' },
-  { id: 'more', label: 'More', icon: '⚙️' }
-];
-
+/**
+ * Five-tab bar mirroring the web mobile layout: each active tab lights its icon
+ * in a tinted pill using the per-tab accent from the shared NAV config.
+ */
 export function BottomNav({
   active,
-  onChange,
-  onAdd
+  onChange
 }: {
   active: MainTab;
   onChange: (tab: MainTab) => void;
-  onAdd: () => void;
 }) {
+  const { palette: c } = useTheme();
   return (
-    <View style={styles.wrap}>
-      <View style={styles.bar}>
-        {TABS.slice(0, 2).map((tab) => (
-          <TabButton key={tab.id} tab={tab} active={active === tab.id} onPress={() => onChange(tab.id)} />
-        ))}
-        <View style={styles.fabSlot}>
-          <TouchableOpacity style={styles.fab} onPress={onAdd} activeOpacity={0.85}>
-            <Text style={styles.fabText}>+</Text>
+    <View style={[styles.wrap, { backgroundColor: c.bgElevated, borderTopColor: c.borderSoft }]}>
+      {NAV.map((item) => {
+        const isActive = active === item.id;
+        return (
+          <TouchableOpacity
+            key={item.id}
+            style={styles.tab}
+            onPress={() => onChange(item.id)}
+            activeOpacity={0.7}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: isActive }}
+          >
+            <View
+              style={[
+                styles.iconPill,
+                isActive && { backgroundColor: `${item.tint}26` }
+              ]}
+            >
+              <Text style={[styles.icon, { opacity: isActive ? 1 : 0.6 }]}>{item.icon}</Text>
+            </View>
+            <Text
+              style={[styles.label, { color: isActive ? item.tint : c.tabInactive }]}
+              numberOfLines={1}
+            >
+              {item.shortLabel}
+            </Text>
           </TouchableOpacity>
-        </View>
-        {TABS.slice(2).map((tab) => (
-          <TabButton key={tab.id} tab={tab} active={active === tab.id} onPress={() => onChange(tab.id)} />
-        ))}
-      </View>
+        );
+      })}
     </View>
-  );
-}
-
-function TabButton({
-  tab,
-  active,
-  onPress
-}: {
-  tab: { id: MainTab; label: string; icon: string };
-  active: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity style={styles.tab} onPress={onPress}>
-      <Text style={[styles.tabIcon, active && styles.tabIconActive]}>{tab.icon}</Text>
-      <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{tab.label}</Text>
-    </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: {
-    borderTopWidth: 1,
-    borderTopColor: colors.borderSoft,
-    backgroundColor: colors.bgElevated
-  },
-  bar: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'flex-start',
     justifyContent: 'space-around',
-    paddingTop: 8,
+    borderTopWidth: 1,
+    paddingTop: 6,
     paddingBottom: 10,
-    paddingHorizontal: 8
+    paddingHorizontal: 4
   },
-  tab: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 2,
-    paddingBottom: 2
-  },
-  tabIcon: {
-    fontSize: 18,
-    color: colors.tabInactive
-  },
-  tabIconActive: {
-    color: colors.tabActive
-  },
-  tabLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.tabInactive
-  },
-  tabLabelActive: {
-    color: colors.tabActive
-  },
-  fabSlot: {
-    width: 72,
-    alignItems: 'center',
-    marginTop: -28
-  },
-  fab: {
-    width: 56,
-    height: 56,
+  tab: { flex: 1, alignItems: 'center', gap: 3 },
+  iconPill: {
+    width: 46,
+    height: 30,
     borderRadius: radius.pill,
-    backgroundColor: colors.fab,
     alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: colors.accent,
-    shadowOpacity: 0.5,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 8
+    justifyContent: 'center'
   },
-  fabText: {
-    color: '#fff',
-    fontSize: 32,
-    lineHeight: 34,
-    fontWeight: '300',
-    marginTop: -2
-  }
+  icon: { fontSize: 17 },
+  label: { fontSize: 10, fontWeight: '700' }
 });

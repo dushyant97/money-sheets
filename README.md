@@ -1,8 +1,10 @@
 # Money Sheets
 
-A personal expense and income tracker built as an **offline-first** web and mobile app with **local storage** and **CSV / Excel backup**. No sign-in, no cloud, no ads.
+A personal expense and income tracker built as an **offline-first** web and mobile app with **local storage** and **CSV / Excel backup**. No sign-in, no ads, no developer backend.
 
-The web app also supports an **optional Turso (libSQL) cloud database** so you can sync the same ledger across devices using your own credentials. Local storage remains the default — Turso is entirely opt-in. See [Storage modes](#storage-modes).
+Both the **web and mobile** apps support an **optional Turso (libSQL) cloud database** so you can sync the same ledger across devices using your own credentials. Local storage remains the default — Turso is entirely opt-in. See [Storage modes](#storage-modes).
+
+The mobile app (iOS + Android, Expo) is at **full feature parity** with the web mobile layout: five tabs (Records, Stats, Categories, Accounts, More), a **light/dark theme toggle**, ring + trends charts, editable categories/accounts, showcase mode, Excel import/export, and Turso sync. See the [mobile parity table](#web--mobile-feature-parity).
 
 ## What this app does
 
@@ -57,29 +59,53 @@ The full ledger is stored as a single JSON snapshot — in `localStorage` for lo
 4. In the app, open **Budgets & Data → Storage**, pick **Turso DB**, paste the URL and token, and click **Test connection**.
 5. Click **Save & Reload**. The app creates the table if needed and uploads your current data.
 
-Your URL and token are stored only on your device (in `localStorage`) and are never sent anywhere except directly to your Turso database over HTTPS. Because all calls go from the browser to Turso's HTTP API, this works on static hosts like GitHub Pages with no backend.
+Your URL and token are stored only on your device (in `localStorage` on web, AsyncStorage on mobile) and are never sent anywhere except directly to your Turso database over HTTPS. Because all calls go from the client to Turso's HTTP API, this works on static hosts like GitHub Pages and inside the mobile app with no backend.
 
-> Mobile Turso support is planned. The shared types and schema in `shared/storage/` are already platform-agnostic so the mobile app can adopt the same model later.
+### Turso on mobile
+
+The mobile app uses the **same** `shared/storage/` types, schema, and preferences as the web app. Setup is identical: open **More → Storage**, choose **Turso**, paste your database URL and auth token, tap **Test connection**, then **Save storage settings**.
+
+- Credentials are persisted in AsyncStorage under the same `money-sheets-storage-prefs-v1` key.
+- Connectivity is detected with `@react-native-community/netinfo`. When the device goes offline, the app falls back to the local AsyncStorage cache and shows Turso as unavailable; a reconnect banner offers **push local / use cloud** when the copies diverge.
+- The libSQL client (`@libsql/client`) talks to Turso over HTTPS via `fetch`, and is lazy-imported so offline-only installs don't pay its cost.
+
+## Web & mobile feature parity
+
+The mobile app mirrors the web mobile layout. As of v2.0.0:
+
+| Area | Web (mobile layout) | Mobile (iOS + Android) |
+| --- | --- | --- |
+| Tabs | Records, Stats, Categories, Accounts, More | ✅ Same five tabs with per-tab accent tints |
+| Theme | Light + dark toggle | ✅ Light + dark toggle (persisted) |
+| Storage | Local + Turso + offline fallback | ✅ Local + Turso + offline fallback |
+| Reconnect banner | Push local / pull cloud | ✅ Push local / use cloud |
+| Stats | KPIs, ring breakdown, trends line chart | ✅ KPIs, ring (react-native-svg), trends |
+| Records | Filters card, calendar day modal, row edit/delete | ✅ Same |
+| Add | Direct amount + calculator, calendar date picker | ✅ Same |
+| Categories | Picker, hero card, compact list, inline editor | ✅ Same |
+| Accounts | Editable cards (name, emoji, color, currency, opening) | ✅ Same |
+| Showcase mode | Demo data with confirmation | ✅ Same |
+| Import / export | CSV + Excel with progress | ✅ CSV + Excel with progress overlay |
+| Branding | ₹/bar-chart purple-gradient mark | ✅ Matching icon, adaptive icon, splash |
 
 ## Table of contents
 
 1. [Storage modes](#storage-modes)
-2. [End-user app flow](#end-user-app-flow)
-3. [Backup and restore (CSV / Excel)](#backup-and-restore-csv--excel)
-4. [Developer setup](#developer-setup)
-5. [Run locally](#run-locally)
-6. [Architecture](#architecture)
-7. [Local data model](#local-data-model)
-8. [Read and write paths](#read-and-write-paths)
-9. [Import & export formats](#import--export-formats)
-10. [Theming](#theming)
-11. [Statistics: breakdown & trends](#statistics-breakdown--trends)
-12. [Features](#features)
-13. [Production and deployment](#production-and-deployment)
-14. [Google Play compliance](#google-play-compliance)
-15. [Privacy](#privacy)
-16. [Troubleshooting](#troubleshooting)
-17. [Suggested extensions](#suggested-extensions)
+2. [Web & mobile feature parity](#web--mobile-feature-parity)
+3. [End-user app flow](#end-user-app-flow)
+4. [Backup and restore (CSV / Excel)](#backup-and-restore-csv--excel)
+5. [Developer setup](#developer-setup)
+6. [Run locally](#run-locally)
+7. [Architecture](#architecture)
+8. [Local data model](#local-data-model)
+9. [Read and write paths](#read-and-write-paths)
+10. [Import & export formats](#import--export-formats)
+11. [Features](#features)
+12. [Production and deployment](#production-and-deployment)
+13. [Store submission](#store-submission)
+14. [Privacy](#privacy)
+15. [Troubleshooting](#troubleshooting)
+16. [Suggested extensions](#suggested-extensions)
 
 ## End-user app flow
 
@@ -200,11 +226,11 @@ Use this checklist when joining the project or standing up a new environment.
 | Storage key | `money-sheets-ledger-v1` |
 | Is there a custom backend? | No |
 | How do web and mobile sync? | Manual CSV / Excel export/import by the user |
-| Where is shared business logic? | `shared/finance.ts`, `shared/uiHelpers.ts`, `shared/theme.ts`, `shared/ledgerStore.ts`, `shared/csvImport.ts` |
-| Where is persistence? | `web/src/localLedgerStore.ts`, `mobile/src/localLedgerStore.ts` |
+| Where is shared business logic? | `shared/finance.ts`, `shared/uiHelpers.ts`, `shared/theme.ts`, `shared/nav.ts`, `shared/ledgerStore.ts`, `shared/csvImport.ts`, `shared/storage/` |
+| Where is persistence? | `web/src/storage/`, `mobile/src/storage/` (local + Turso adapters behind a shared interface) |
 | Where is app state? | `web/src/ledger.tsx`, `mobile/src/context/LedgerContext.tsx` |
-| Where is the web theme? | `web/src/theme.tsx` (light/dark context), CSS variables in `web/src/styles.css` |
-| Where is Excel read/write? | `web/src/spreadsheet.ts` (SheetJS, lazy-loaded) |
+| Where is the theme? | Web: `web/src/theme.tsx` + CSS vars in `web/src/styles.css`. Mobile: `mobile/src/theme/ThemeProvider.tsx` + tokens in `shared/theme.ts` |
+| Where is Excel read/write? | `web/src/spreadsheet.ts` and `mobile/src/spreadsheet.ts` (SheetJS, lazy-loaded) |
 
 ### 2. No Google Cloud setup required
 
@@ -274,10 +300,14 @@ Expo Go works for basic UI testing. Document picker import is most reliable on a
 
 | Package | Purpose |
 | --- | --- |
-| `@react-native-async-storage/async-storage` | Persist ledger JSON on device |
-| `expo-document-picker` | Pick CSV file for import |
-| `expo-file-system` | Read picked file contents |
-| `react-native-svg` | Render the Stats pie chart |
+| `@react-native-async-storage/async-storage` | Persist ledger JSON + storage/theme prefs on device |
+| `@react-native-community/netinfo` | Detect connectivity for Turso online/offline fallback |
+| `@libsql/client` | Optional Turso cloud sync over HTTPS (lazy-imported) |
+| `expo-document-picker` | Pick CSV / Excel file for import |
+| `expo-file-system` | Read picked file contents; write export files |
+| `expo-sharing` | Share exported CSV / Excel files |
+| `react-native-svg` | Render the Stats ring breakdown and trends line chart |
+| `xlsx` (SheetJS) | Read/write `.xlsx` on import/export (lazy-imported) |
 
 > **Expo Go note:** this project targets **Expo SDK 56**, so use the latest **Expo Go** from the
 > Play Store / App Store. Older Expo Go versions show "Project is incompatible with this version of
@@ -345,23 +375,28 @@ money-sheets-starter/
 │   ├── csvImport.ts        # parseTransactionsCsv (native + generic/Money-Manager formats, date sort)
 │   ├── calc.ts             # Safe calculator expression evaluator (shared by web + mobile)
 │   ├── uiHelpers.ts        # Category meta, CHART_PALETTE, ring/pie geometry, money formatters
-│   └── theme.ts            # Mobile design tokens
+│   ├── nav.ts              # Shared NAV tabs (id, label, icon, tint) for web + mobile
+│   ├── theme.ts            # Light + dark palettes (ThemePalette), design tokens
+│   └── storage/            # Storage abstraction: types, prefs, Turso SQL schema
 ├── web/
 │   └── src/
 │       ├── App.tsx                 # Shell, Transactions, Stats (ring + trends), Accounts, More
 │       ├── Calculator.tsx          # Calculator modal (amount entry)
 │       ├── theme.tsx               # Light/dark ThemeProvider + useTheme (persisted, no-FOUC)
 │       ├── spreadsheet.ts          # SheetJS read (.csv/.xlsx) + .xlsx export (lazy-loaded)
-│       ├── ledger.tsx              # React context, load/save/import/export, settings
-│       └── localLedgerStore.ts     # localStorage adapter
+│       ├── ledger.tsx              # React context, load/save/import/export, settings, storage
+│       └── storage/                # localAdapter, tursoAdapter, prefsStore, activeStorage, switchMode
 └── mobile/
+    ├── assets/                     # icon.png, adaptive-icon.png, splash.png
     └── src/
         ├── context/
-        │   └── LedgerContext.tsx
-        ├── localLedgerStore.ts     # AsyncStorage adapter
-        ├── screens/
-        └── components/
-            └── Calculator.tsx      # Calculator bottom-sheet (amount entry)
+        │   └── LedgerContext.tsx   # Web-parity context (storage, Turso, showcase, import)
+        ├── theme/
+        │   └── ThemeProvider.tsx   # Light/dark provider + useTheme (persisted)
+        ├── storage/                # localAdapter (AsyncStorage), tursoAdapter, prefs, activeStorage, switchMode
+        ├── spreadsheet.ts          # CSV + Excel read/write (SheetJS, lazy-loaded)
+        ├── screens/                # Trans, Stats, Categories, Accounts, More, AddTransaction
+        └── components/             # AppHeader, BottomNav, MonthNav, charts, modals, Calculator
 ```
 
 ### Design principles
@@ -470,14 +505,16 @@ On first launch, `createDefaultLedger()` in `shared/ledgerStore.ts` provides:
 sequenceDiagram
   participant UI as App UI
   participant Ledger as Ledger context
-  participant Store as localLedgerStore
-  participant Disk as localStorage / AsyncStorage
+  participant Resolver as activeStorage resolver
+  participant Adapter as local / Turso adapter
+  participant Disk as localStorage / AsyncStorage / Turso
 
   UI->>Ledger: Mount
-  Ledger->>Store: loadLocalLedger()
-  Store->>Disk: getItem(money-sheets-ledger-v1)
-  Disk-->>Store: JSON or null
-  Store-->>Ledger: LedgerSnapshot
+  Ledger->>Resolver: resolve effective storage (prefs + online)
+  Resolver->>Adapter: load()
+  Adapter->>Disk: read ledger JSON
+  Disk-->>Adapter: JSON or null
+  Adapter-->>Ledger: LedgerSnapshot
   Ledger-->>UI: Render dashboard
 ```
 
@@ -505,10 +542,11 @@ flowchart TD
   Save --> UI[Show imported data]
 ```
 
-On web, `readTransactionsFromFile()` (`web/src/spreadsheet.ts`) converts Excel workbooks to CSV
-text before parsing; mobile reads CSV text directly. `parseTransactionsCsv()` then auto-detects the
-column layout and sorts rows chronologically, and `ledgerFromImportedTransactions()` replaces the
-entire snapshot: new transactions, rebuilt accounts/categories, empty budgets.
+Both clients convert Excel workbooks to CSV text before parsing — `web/src/spreadsheet.ts` and
+`mobile/src/spreadsheet.ts` lazy-load SheetJS for `.xlsx` and read `.csv` directly.
+`parseTransactionsCsv()` then auto-detects the column layout and sorts rows chronologically, and
+`ledgerFromImportedTransactions()` replaces the entire snapshot: new transactions, rebuilt
+accounts/categories, empty budgets.
 
 ### Delete transaction
 
@@ -582,8 +620,9 @@ How these rows are mapped:
 ## Features
 
 - **No sign-in** — app loads immediately
-- **Offline storage** — web `localStorage`, mobile AsyncStorage
-- **Tabs:** Trans., Stats, Accounts, More
+- **Offline storage** — web `localStorage`, mobile AsyncStorage; **optional Turso cloud sync** on both
+- **Light / dark theme** toggle on web and mobile
+- **Tabs:** Records, Stats, Categories, Accounts, More (web and mobile)
 - **Transactions:** add, edit, soft-delete
 - **Month-scoped records** — the transaction list always shows only the selected month
 - **Custom categories** — create/remove income and expense categories (More → Manage)
@@ -592,15 +631,17 @@ How these rows are mapped:
 - **Monthly carry forward** — optional setting (off by default) to carry the running balance into the next month
 - **Income and expense** tracking with category chips
 - **Account balances** with opening balance support (month-scoped or running, per carry-forward setting)
-- **Pie chart stats** with an Income / Expenses toggle and per-category percentage breakdown (Stats tab)
-- **Calendar, weekly, monthly, summary** views (Trans. tab)
+- **Stats:** KPI cards (income, expense, net, savings rate with month-over-month deltas), a donut
+  ring breakdown with category highlight, and a per-category trends line chart (week / month / year)
+- **Categories tab** — pick a category to see its monthly transactions and edit name/emoji/color
+- **Calendar, weekly, monthly, summary** views; tap a calendar day for that day's transactions
 - **Date headers** in the records list show the weekday and full date with the day's net total
 - **Monthly budgets** with progress (More tab)
-- **CSV export** — Excel-compatible download / share
-- **CSV import** — replace local data with confirmation
+- **Showcase mode** — load demo data to explore the app (with confirmation)
+- **Excel + CSV export** and **import** (with a progress overlay on large files)
 - **Erase all data** — reset to default empty ledger
 - **Receipt URL** field on transactions
-- **Modern dark UI**, consistent across web and mobile
+- **Modern UI with light/dark themes**, consistent across web and mobile
 
 | Personal-finance workflow | Money Sheets implementation |
 | --- | --- |
@@ -632,13 +673,13 @@ The setting lives in `settings.carryForward` and is shared by the web and mobile
 
 ## Production and deployment
 
-The app is shipped at **v1.0.0**. Both clients are production-configured:
+The app is shipped at **v2.0.0**. Both clients are production-configured:
 
 | Area | Status |
 | --- | --- |
-| Web | Vite production build, PWA manifest, SVG favicon, dark theme meta, render error boundary |
-| Mobile | Expo SDK 56, `app.config.js` with app id `com.moneysheets.app`, `versionCode` 1, EAS build profiles |
-| Repo | `.gitignore` added, versions bumped to `1.0.0`, no backend/secrets |
+| Web | Vite production build, PWA manifest, SVG favicon, light/dark theme, render error boundary, optional Turso |
+| Mobile | Expo SDK 56, branded icon/splash, app id `com.moneysheets.app`, `versionCode` 2, Android + iOS EAS profiles, optional Turso |
+| Repo | `.gitignore` present, versions at `2.0.0`, no developer backend/secrets |
 
 ### Web hosting
 
@@ -690,8 +731,33 @@ sideload it onto any Android device (enable "Install unknown apps"), or share th
 npm run build:android       # eas build --platform android --profile production
 ```
 
-> Build profiles live in `mobile/eas.json`: `development` (dev client APK), `preview`
-> (installable APK for testers), and `production` (Play Store AAB, auto-incrementing versionCode).
+> Build profiles live in `mobile/eas.json`: `development` (dev client APK / iOS simulator),
+> `preview` (installable APK for testers / device IPA), and `production` (Play Store AAB +
+> App Store IPA, auto-incrementing build numbers).
+
+### Build & release (iOS IPA)
+
+iOS builds also run through EAS (a Mac is **not** required). You do need an
+**Apple Developer Program** membership ($99/yr) for device/TestFlight/App Store builds.
+
+```bash
+cd mobile
+eas login
+# Device / TestFlight preview build:
+npm run build:ipa           # eas build --platform ios --profile preview
+# App Store production build:
+npm run build:ios           # eas build --platform ios --profile production
+```
+
+EAS prompts to create or reuse signing credentials (distribution certificate and provisioning
+profile) and manages them for you. The production profile produces a store-ready `.ipa`.
+
+Submit to TestFlight / App Store either via Xcode/Transporter or:
+
+```bash
+eas submit --platform ios --profile production
+eas submit --platform android --profile production
+```
 
 #### Local build alternative (no EAS)
 
@@ -704,25 +770,21 @@ cd android
 ./gradlew assembleRelease                 # APK at android/app/build/outputs/apk/release/
 ```
 
-#### Add app icon & splash (recommended before release)
+#### App icon & splash
 
-The build currently uses Expo's default icon/splash so it stays green out of the box. To brand it:
-
-1. Add `mobile/assets/icon.png` (1024×1024) and `mobile/assets/adaptive-icon.png` (1024×1024,
-   logo centered in the safe zone), plus an optional `mobile/assets/splash.png`.
-2. Reference them in `mobile/app.config.js`:
+The app ships with a branded icon, Android adaptive icon, and splash screen under
+[`mobile/assets/`](mobile/assets/), matching the web favicon (purple gradient rounded square with
+three bar-chart bars on `#0b0e14`). They are wired in `mobile/app.config.js`:
 
 ```js
 icon: './assets/icon.png',
-android: {
-  package: ANDROID_PACKAGE,
-  versionCode: 1,
-  adaptiveIcon: {
-    foregroundImage: './assets/adaptive-icon.png',
-    backgroundColor: '#0b0e14'
-  }
-}
+splash: { image: './assets/splash.png', resizeMode: 'contain', backgroundColor: '#0b0e14' },
+ios: { icon: './assets/icon.png', infoPlist: { ITSAppUsesNonExemptEncryption: false } },
+android: { adaptiveIcon: { foregroundImage: './assets/adaptive-icon.png', backgroundColor: '#0b0e14' } }
 ```
+
+To re-skin, replace those PNGs (icon and adaptive icon are 1024×1024; keep the logo inside the
+center safe zone for adaptive masking) and rebuild.
 
 ### Mobile data persistence
 
@@ -731,49 +793,63 @@ Remind users to keep a CSV export as their portable backup.
 
 ### Privacy
 
-- Data never leaves the device except when the user exports CSV or shares it.
-- No analytics or third-party finance APIs are included by default.
+- By default, data never leaves the device except when the user exports it or shares it.
+- **Optional Turso sync** (off by default) sends the ledger only to a database the **user** owns,
+  using credentials stored on-device. The developer operates no server and receives no data.
+- No analytics or third-party tracking SDKs are included.
 - Receipt URLs are stored as plain text links in local storage.
 - A full privacy policy is provided in [`PRIVACY.md`](./PRIVACY.md). Host it at a public URL
-  (e.g. GitHub Pages or a gist) and paste that URL into the Play Console listing.
+  (e.g. Cloudflare Pages, GitHub Pages, or a gist) and paste that URL into both store listings.
+  Replace the contact placeholder in the file first.
 
-### Google Play compliance
+### Store submission
 
-This app is designed to satisfy Google Play policies for a finance utility. Before submitting:
+This app is designed to satisfy Google Play and Apple App Store policies for a finance utility.
 
-**Privacy policy (required)**
+#### Google Play
 
-- Publish [`PRIVACY.md`](./PRIVACY.md) at a public URL and add it to *Play Console → App content
-  → Privacy policy*. Replace the contact placeholder in the file first.
+**Privacy policy (required)** — publish [`PRIVACY.md`](./PRIVACY.md) at a public URL and add it to
+*Play Console → App content → Privacy policy*.
 
-**Data safety form (Play Console → App content → Data safety)** — suggested answers for the
-current offline build:
+**Data safety form (Play Console → App content → Data safety)** — suggested answers:
 
 | Question | Answer |
 | --- | --- |
-| Does your app collect or share user data? | **No** (all data stays on-device; nothing is sent to the developer or third parties) |
-| Is data processed only on the device? | **Yes** |
-| Data encrypted in transit? | Not applicable (no data is transmitted by the app) |
-| Can users request data deletion? | **Yes** — in-app *Erase all data*, or uninstall |
+| Does your app collect or share user data? | **No collection by the developer.** With optional Turso enabled, data goes only to the user's own database, not to the developer. |
+| Is data processed only on the device? | **Yes** by default; optionally synced to the user's own Turso database when they enable it. |
+| Data encrypted in transit? | **Yes** — Turso sync uses HTTPS. (No transmission at all with sync off.) |
+| Can users request data deletion? | **Yes** — in-app *Erase all data*, or uninstall. |
 
-**Permissions**
-
-- Only file access is used, and only when the user taps *Import CSV*. No location, contacts,
-  camera, microphone, or background permissions are requested.
+**Permissions** — file access (import/export, user-initiated) and Internet (only used for Turso
+when the user enables it). No location, contacts, camera, microphone, or background permissions.
 
 **Other policy items**
 
-- **App name / branding:** "Money Sheets" — original, with no third-party trademarks, logos, or
-  "inspired by" references in the app, store listing, or code.
-- **No ads, no in-app purchases, no account/sign-in.**
-- **Package id:** `com.moneysheets.app` (no `com.example.*`). Change it in `mobile/app.config.js`
-  if you publish under your own organization.
-- **Content rating:** complete the *Play Console → App content → Content rating* questionnaire
-  (a finance app with no objectionable content rates "Everyone").
-- **Target audience:** not directed at children; the app collects no data.
+- **App name / branding:** "Money Sheets" — original, no third-party trademarks or "inspired by"
+  references in the app, store listing, or code.
+- **No ads, no in-app purchases, no developer account/sign-in.**
+- **Package id:** `com.moneysheets.app` (override via `EXPO_PUBLIC_ANDROID_PACKAGE`).
+- **Content rating:** complete the questionnaire — a finance app with no objectionable content
+  rates "Everyone".
+- **Target audience:** not directed at children.
 
-> If you later add analytics, crash reporting, ads, or cloud sync, update `PRIVACY.md` and the
-> Data safety form accordingly — those introduce data collection that must be disclosed.
+#### Apple App Store
+
+- **Account:** requires an Apple Developer Program membership and an App Store Connect app record
+  (bundle id `com.moneysheets.app`, override via `EXPO_PUBLIC_IOS_BUNDLE_ID`).
+- **Privacy nutrition labels (App Store Connect → App Privacy):** declare **"Data Not Collected"**
+  by the developer. The optional Turso sync sends data only to the user's own database; disclose it
+  honestly in the questionnaire if prompted (user-configured third-party storage, not developer
+  collection, no tracking).
+- **Export compliance:** the app uses only standard HTTPS (exempt). `ITSAppUsesNonExemptEncryption`
+  is set to `false` in `app.config.js`, so uploads skip the per-build encryption prompt.
+- **Review notes:** explain that the app is offline-first with no login, and that cloud sync is an
+  optional bring-your-own-Turso feature; no test account is needed.
+- **Screenshots:** provide 6.7" and 6.1" iPhone sets (and iPad if `supportsTablet` stays `true`).
+- **TestFlight:** distribute the `preview`/`production` iOS build to testers before submitting.
+
+> If you later add analytics, crash reporting, or ads, update `PRIVACY.md`, the Play Data safety
+> form, and the Apple privacy labels — those introduce data collection that must be disclosed.
 
 ### Recommended user messaging
 

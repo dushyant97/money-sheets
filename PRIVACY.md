@@ -1,17 +1,20 @@
 # Privacy Policy — Money Sheets
 
-_Last updated: 15 June 2026_
+_Last updated: 16 June 2026_
 
-Money Sheets ("the app") is an offline-first personal finance tracker. Your privacy is simple to
-explain because the app is built so that **your financial data never leaves your device** unless you
-choose to export it yourself.
+Money Sheets ("the app") is an offline-first personal finance tracker. By default, **your financial
+data never leaves your device** unless you choose to export it yourself. The app also offers an
+**optional** cloud sync mode that you can enable with your own database credentials; even then, your
+data only ever goes to a database **you own and control** — never to the developer.
 
 ## Summary
 
 - **We do not collect any personal data.**
-- **We do not have servers, accounts, or sign-in.**
+- **We do not have servers, accounts, or sign-in operated by the developer.**
 - **We do not share, sell, or transmit your data to us or any third party.**
 - **We do not use analytics, advertising, or tracking SDKs.**
+- **Optional cloud sync** sends your data only to a Turso database that **you** configure with your
+  own credentials. It is off by default.
 
 ## What data the app stores
 
@@ -22,7 +25,23 @@ and settings — **locally on your device**:
 - On the web, via your browser's `localStorage`.
 
 This data is created and controlled entirely by you. It is not accessible to the developer and is
-not uploaded anywhere.
+not uploaded anywhere by default.
+
+## Optional cloud sync (Turso)
+
+You may optionally turn on cloud sync from **More → Storage** by entering your own
+[Turso](https://turso.tech/) database URL and auth token. When enabled:
+
+- The app stores your ledger (the same data listed above, as a single JSON record) in **your own**
+  Turso database so it can sync across devices that use the same credentials.
+- Your Turso URL and auth token are stored **only on your device** (AsyncStorage on mobile,
+  `localStorage` on the web). They are never sent to the developer.
+- The developer operates no server in this flow and never receives, stores, or has access to your
+  data or your credentials. Your data is handled solely by Turso under your own account and
+  [Turso's privacy terms](https://turso.tech/).
+- A local copy is always kept on the device as an offline cache. If the network is unavailable, the
+  app falls back to that local copy and resumes syncing when you reconnect.
+- You can switch back to local-only storage at any time from the same screen.
 
 ## CSV export and import
 
@@ -37,8 +56,10 @@ These actions are always initiated by you. The app does not export or import any
 
 ## Permissions
 
-- **File access (mobile):** used only when you tap *Import CSV*, so you can pick a file. The app
-  reads the file you select and nothing else.
+- **File access (mobile):** used only when you tap *Import* or *Export*, so you can pick or save a
+  file. The app reads the file you select and nothing else.
+- **Internet access:** used **only** when you enable optional Turso cloud sync, to reach the
+  database you configured. With sync off, the app makes no network requests for your data.
 
 The app requests no other sensitive permissions (no location, contacts, camera, microphone, or
 background network access).

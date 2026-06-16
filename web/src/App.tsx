@@ -26,27 +26,15 @@ import {
   type TrendGranularity
 } from './ledger';
 import type { Account, AccountBalance, Category, Transaction, TransactionType } from '../../shared/finance';
+import { NAV as SHARED_NAV, TAB_TITLES } from '../../shared/nav';
 import type { StorageMode, StoragePreferences } from '../../shared/storage/types';
 import { isTursoConfigComplete, isValidTursoUrl } from '../../shared/storage/prefs';
 import { Calculator } from './Calculator';
 import { useTheme } from './theme';
 import './styles.css';
 
-const NAV = [
-  { id: 'trans' as const, label: 'Transactions', shortLabel: 'Records', icon: '📒', tint: '#4f7cff' },
-  { id: 'stats' as const, label: 'Statistics', shortLabel: 'Stats', icon: '📊', tint: '#22c08b' },
-  { id: 'categories' as const, label: 'Categories', shortLabel: 'Cats', icon: '🗂️', tint: '#ffb020' },
-  { id: 'accounts' as const, label: 'Accounts', shortLabel: 'Accounts', icon: '🏦', tint: '#9b6bff' },
-  { id: 'more' as const, label: 'Budgets & Data', shortLabel: 'More', icon: '⚙️', tint: '#ff5d8f' }
-];
-
-const TITLES: Record<string, string> = {
-  trans: 'Transactions',
-  stats: 'Statistics',
-  categories: 'Categories',
-  accounts: 'Accounts',
-  more: 'Budgets & Data'
-};
+const NAV = SHARED_NAV;
+const TITLES: Record<string, string> = TAB_TITLES;
 
 const HOME_VIEWS: Array<{ id: HomeView; label: string }> = [
   { id: 'calendar', label: 'Calendar' },
