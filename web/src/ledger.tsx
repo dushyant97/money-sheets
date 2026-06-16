@@ -48,12 +48,34 @@ import {
   updateTransactionInLedger,
   upsertBudgetInLedger
 } from '../../shared/ledgerStore';
-import { clearLocalLedger, loadLocalLedger, saveLocalLedger } from './localLedgerStore';
+import { clearLocalLedger, loadLocalLedger, saveLocalLedger } from './storage/localAdapter';
+import {
+  clearTursoLedger,
+  loadTursoLedger,
+  saveTursoLedger,
+  testTursoConnection as runTursoConnectionTest
+} from './storage/tursoAdapter';
+import { loadStoragePreferences, saveStoragePreferences } from './storage/prefsStore';
+import { resolveEffectiveStorage } from './storage/activeStorage';
+import { applyStorageSwitch } from './storage/switchMode';
+import { isTursoConfigComplete } from '../../shared/storage/prefs';
+import type {
+  EffectiveStorageInfo,
+  StorageMode,
+  StoragePreferences,
+  TursoConfig
+} from '../../shared/storage/types';
 import { buildShowcaseLedger } from '../../shared/showcaseData';
 
 export type MainTab = 'trans' | 'stats' | 'categories' | 'accounts' | 'more';
 export type HomeView = 'calendar' | 'weekly' | 'monthly' | 'summary';
 export type LoadPhase = 'loading' | 'ready' | 'error';
+
+/** Shown after reconnecting when the local cache and Turso copy diverge. */
+export type ReconnectInfo = {
+  localUpdatedAt: string;
+  remoteUpdatedAt: string;
+};
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -85,8 +107,12 @@ type LedgerState = {
   carryForward: boolean;
   showcaseMode: boolean;
   busy: boolean;
+  importProgress: number | null;
   loadPhase: LoadPhase;
   message: string;
+  storagePrefs: StoragePreferences;
+  effectiveStorage: EffectiveStorageInfo;
+  reconnect: ReconnectInfo | null;
   mainTab: MainTab;
   homeView: HomeView;
   selectedMonth: Date;
@@ -118,6 +144,14 @@ type LedgerState = {
   resetAllData: () => Promise<void>;
   enableShowcaseMode: () => Promise<void>;
   exitShowcaseMode: () => Promise<void>;
+  testTursoConnection: (config: TursoConfig) => Promise<void>;
+  applyStorageSettings: (
+    next: StoragePreferences,
+    confirmReplace: (targetMode: StorageMode) => Promise<boolean> | boolean
+  ) => Promise<boolean>;
+  syncLocalToTurso: () => Promise<void>;
+  pullFromTurso: () => Promise<void>;
+  dismissReconnect: () => void;
 };
 
 const LedgerContext = createContext<LedgerState | null>(null);
@@ -135,9 +169,17 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   const [carryForward, setCarryForwardState] = useState(false);
   const [showcaseMode, setShowcaseModeState] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [importProgress, setImportProgress] = useState<number | null>(null);
   const [loadPhase, setLoadPhase] = useState<LoadPhase>('loading');
   const [message, setMessage] = useState('');
   const bootstrappedRef = useRef(false);
+
+  const storagePrefsRef = useRef<StoragePreferences>(loadStoragePreferences());
+  const [storagePrefs, setStoragePrefs] = useState<StoragePreferences>(() => storagePrefsRef.current);
+  const [effectiveStorage, setEffectiveStorage] = useState<EffectiveStorageInfo>(() =>
+    resolveEffectiveStorage(storagePrefsRef.current)
+  );
+  const [reconnect, setReconnect] = useState<ReconnectInfo | null>(null);
   const [mainTab, setMainTab] = useState<MainTab>('trans');
   const [homeView, setHomeView] = useState<HomeView>('calendar');
   const [selectedMonth, setSelectedMonth] = useState(() => new Date());
@@ -161,9 +203,51 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     setAccountMetaOverrides(applied.accounts);
   }
 
+  // Read from whichever store is effective now. When Turso is active we also
+  // refresh the local cache so offline fallback shows recent data.
+  async function loadActiveLedger(): Promise<LedgerSnapshot> {
+    const prefs = storagePrefsRef.current;
+    const info = resolveEffectiveStorage(prefs);
+    if (info.effectiveMode === 'turso') {
+      const remote = await loadTursoLedger(prefs.turso);
+      await saveLocalLedger(remote);
+      return remote;
+    }
+    return loadLocalLedger();
+  }
+
   async function persist(next: LedgerSnapshot) {
+    const prefs = storagePrefsRef.current;
+    const info = resolveEffectiveStorage(prefs);
+    if (info.effectiveMode === 'turso') {
+      await saveTursoLedger(prefs.turso, next);
+    }
+    // Always keep a local copy: the source of truth for local mode and the
+    // offline cache for Turso mode.
     await saveLocalLedger(next);
     syncFromSnapshot(next);
+  }
+
+  // Clear the effective store (and the local cache when Turso is active).
+  async function clearActiveLedger(): Promise<LedgerSnapshot> {
+    const prefs = storagePrefsRef.current;
+    const info = resolveEffectiveStorage(prefs);
+    if (info.effectiveMode === 'turso') {
+      const fresh = await clearTursoLedger(prefs.turso);
+      await saveLocalLedger(fresh);
+      return fresh;
+    }
+    return clearLocalLedger();
+  }
+
+  function bootMessage(info: EffectiveStorageInfo): string {
+    if (info.effectiveMode === 'turso') {
+      return 'Connected to Turso. Your data syncs across devices that use these credentials.';
+    }
+    if (info.isTursoFallback) {
+      return 'Turso is unavailable (offline). Using the local copy on this device for now.';
+    }
+    return 'Your data is stored on this device. Export CSV to back up or move between devices.';
   }
 
   useEffect(() => {
@@ -172,24 +256,72 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 
     void (async () => {
       try {
-        const loaded = await loadLocalLedger();
+        const info = resolveEffectiveStorage(storagePrefsRef.current);
+        setEffectiveStorage(info);
+        const loaded = await loadActiveLedger();
         syncFromSnapshot(loaded);
         setLoadPhase('ready');
-        setMessage('Your data is stored on this device. Export CSV to back up or move between devices.');
+        setMessage(bootMessage(info));
       } catch (error) {
-        setLoadPhase('error');
-        setMessage(errorMessage(error));
+        // Turso failed at boot: fall back to the local cache so the app still opens.
+        try {
+          const local = await loadLocalLedger();
+          syncFromSnapshot(local);
+          setEffectiveStorage({
+            preferredMode: storagePrefsRef.current.mode,
+            effectiveMode: 'local',
+            isTursoFallback: storagePrefsRef.current.mode === 'turso',
+            isOnline: typeof navigator === 'undefined' ? true : navigator.onLine
+          });
+          setLoadPhase('ready');
+          setMessage(`Could not reach Turso (${errorMessage(error)}). Showing the local copy.`);
+        } catch (fallbackError) {
+          setLoadPhase('error');
+          setMessage(errorMessage(fallbackError));
+        }
       }
     })();
+  }, []);
+
+  // React to connectivity changes for Turso mode: drop to local cache offline,
+  // and surface a sync prompt if local and remote diverged while offline.
+  useEffect(() => {
+    function handleOffline() {
+      setEffectiveStorage(resolveEffectiveStorage(storagePrefsRef.current));
+    }
+
+    async function handleOnline() {
+      const prefs = storagePrefsRef.current;
+      const info = resolveEffectiveStorage(prefs);
+      setEffectiveStorage(info);
+      if (prefs.mode !== 'turso' || !isTursoConfigComplete(prefs.turso)) return;
+      try {
+        const [remote, local] = await Promise.all([loadTursoLedger(prefs.turso), loadLocalLedger()]);
+        if (local.updatedAt !== remote.updatedAt) {
+          setReconnect({ localUpdatedAt: local.updatedAt, remoteUpdatedAt: remote.updatedAt });
+        }
+      } catch {
+        // Still settling; ignore and let the next action surface any error.
+      }
+    }
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, []);
 
   async function refresh() {
     if (!snapshot) return;
     setBusy(true);
     try {
-      const loaded = await loadLocalLedger();
+      const info = resolveEffectiveStorage(storagePrefsRef.current);
+      setEffectiveStorage(info);
+      const loaded = await loadActiveLedger();
       syncFromSnapshot(loaded);
-      setMessage('Ledger refreshed from local storage.');
+      setMessage(info.effectiveMode === 'turso' ? 'Ledger refreshed from Turso.' : 'Ledger refreshed from local storage.');
     } catch (error) {
       setMessage(errorMessage(error));
     } finally {
@@ -424,10 +556,15 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     if (!confirmed) return;
 
     setBusy(true);
+    setImportProgress(0);
+    setMessage(`Reading "${file.name}"…`);
     try {
-      const imported = await readTransactionsFromFile(file);
+      const imported = await readTransactionsFromFile(file, (fraction) => {
+        setImportProgress(Math.min(0.98, fraction));
+      });
       const next = ledgerFromImportedTransactions(imported);
       await persist(next);
+      setImportProgress(1);
       setForm(emptyForm());
       setEditingId(null);
       setShowAdd(false);
@@ -436,6 +573,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
       setMessage(errorMessage(error));
     } finally {
       setBusy(false);
+      setImportProgress(null);
     }
   }
 
@@ -471,7 +609,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 
     setBusy(true);
     try {
-      const fresh = await clearLocalLedger();
+      const fresh = await clearActiveLedger();
       syncFromSnapshot(fresh);
       setForm(emptyForm());
       setEditingId(null);
@@ -492,17 +630,85 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 
     setBusy(true);
     try {
-      const fresh = await clearLocalLedger();
+      const fresh = await clearActiveLedger();
       syncFromSnapshot(fresh);
       setForm(emptyForm());
       setEditingId(null);
       setShowAdd(false);
-      setMessage('All local data was cleared.');
+      setMessage('All data was cleared.');
     } catch (error) {
       setMessage(errorMessage(error));
     } finally {
       setBusy(false);
     }
+  }
+
+  async function testTursoConnection(config: TursoConfig) {
+    await runTursoConnectionTest(config);
+  }
+
+  async function applyStorageSettings(
+    next: StoragePreferences,
+    confirmReplace: (targetMode: StorageMode) => Promise<boolean> | boolean
+  ): Promise<boolean> {
+    setBusy(true);
+    try {
+      const result = await applyStorageSwitch({
+        current: storagePrefsRef.current,
+        next,
+        confirmReplace
+      });
+      if (!result) return false;
+      saveStoragePreferences(next);
+      storagePrefsRef.current = next;
+      setStoragePrefs(next);
+      // Reload so the whole app re-boots cleanly against the new store.
+      window.location.reload();
+      return true;
+    } catch (error) {
+      setMessage(errorMessage(error));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function syncLocalToTurso() {
+    const prefs = storagePrefsRef.current;
+    if (!isTursoConfigComplete(prefs.turso)) return;
+    setBusy(true);
+    try {
+      const local = await loadLocalLedger();
+      await saveTursoLedger(prefs.turso, local);
+      syncFromSnapshot(local);
+      setReconnect(null);
+      setMessage('Local changes pushed to Turso.');
+    } catch (error) {
+      setMessage(errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function pullFromTurso() {
+    const prefs = storagePrefsRef.current;
+    if (!isTursoConfigComplete(prefs.turso)) return;
+    setBusy(true);
+    try {
+      const remote = await loadTursoLedger(prefs.turso);
+      await saveLocalLedger(remote);
+      syncFromSnapshot(remote);
+      setReconnect(null);
+      setMessage('Pulled the latest data from Turso.');
+    } catch (error) {
+      setMessage(errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function dismissReconnect() {
+    setReconnect(null);
   }
 
   const value: LedgerState = {
@@ -513,8 +719,12 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     carryForward,
     showcaseMode,
     busy,
+    importProgress,
     loadPhase,
     message,
+    storagePrefs,
+    effectiveStorage,
+    reconnect,
     mainTab,
     homeView,
     selectedMonth,
@@ -545,7 +755,12 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     importData,
     resetAllData,
     enableShowcaseMode,
-    exitShowcaseMode
+    exitShowcaseMode,
+    testTursoConnection,
+    applyStorageSettings,
+    syncLocalToTurso,
+    pullFromTurso,
+    dismissReconnect
   };
 
   return <LedgerContext.Provider value={value}>{children}</LedgerContext.Provider>;

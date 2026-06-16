@@ -2,6 +2,8 @@
 
 A personal expense and income tracker built as an **offline-first** web and mobile app with **local storage** and **CSV / Excel backup**. No sign-in, no cloud, no ads.
 
+The web app also supports an **optional Turso (libSQL) cloud database** so you can sync the same ledger across devices using your own credentials. Local storage remains the default — Turso is entirely opt-in. See [Storage modes](#storage-modes).
+
 ## What this app does
 
 Money Sheets gives users a simple finance tracker across web and mobile:
@@ -27,26 +29,57 @@ To move data between devices, export a CSV from one device and import it on anot
 | CSV / Excel export | Open in Excel, Google Sheets, or any spreadsheet app |
 | CSV / Excel import | Restore backups, or migrate data from other money managers |
 
-Trade-off: there is **no automatic cloud sync**. Users manage backups themselves via CSV / Excel files.
+Trade-off: by default there is **no automatic cloud sync**; users manage backups themselves via CSV / Excel files. If you want cross-device sync without giving up the offline-first model, the web app can optionally use [Turso](#storage-modes).
+
+## Storage modes
+
+The web app can store its ledger in one of two places. You choose this in the app under **Budgets & Data → Storage**.
+
+| Mode | Where data lives | Sync | Default |
+| --- | --- | --- | --- |
+| **Local Storage** | This browser only (`localStorage`) | None — export/import CSV to move data | Yes |
+| **Turso DB** | Your Turso (libSQL) database in the cloud | Across any device using the same credentials | No |
+
+The full ledger is stored as a single JSON snapshot — in `localStorage` for local mode, and in a one-row `ledger_snapshot` table for Turso. The data shape is identical, so switching modes is lossless.
+
+### How Turso mode behaves
+
+- **Online:** reads and writes go to your Turso database. A copy is also kept in `localStorage` as an offline cache.
+- **Offline:** if the browser loses connectivity, the app automatically falls back to the local copy and marks Turso as unavailable. You can keep working; changes are saved locally.
+- **Back online:** if your local copy and the Turso copy diverged while offline, a banner lets you **push local to Turso**, **pull from Turso**, or dismiss and decide later. There is no automatic merge.
+- **Switching modes** copies your current data into the target store. If the target already has data, you confirm before it is replaced.
+
+### Set up Turso
+
+1. Create a free database at [turso.tech](https://turso.tech) (or with the Turso CLI: `turso db create money-sheets`).
+2. Get the database URL (looks like `libsql://your-db-name.turso.io`).
+3. Create an auth token (`turso db tokens create money-sheets`).
+4. In the app, open **Budgets & Data → Storage**, pick **Turso DB**, paste the URL and token, and click **Test connection**.
+5. Click **Save & Reload**. The app creates the table if needed and uploads your current data.
+
+Your URL and token are stored only on your device (in `localStorage`) and are never sent anywhere except directly to your Turso database over HTTPS. Because all calls go from the browser to Turso's HTTP API, this works on static hosts like GitHub Pages with no backend.
+
+> Mobile Turso support is planned. The shared types and schema in `shared/storage/` are already platform-agnostic so the mobile app can adopt the same model later.
 
 ## Table of contents
 
-1. [End-user app flow](#end-user-app-flow)
-2. [Backup and restore (CSV / Excel)](#backup-and-restore-csv--excel)
-3. [Developer setup](#developer-setup)
-4. [Run locally](#run-locally)
-5. [Architecture](#architecture)
-6. [Local data model](#local-data-model)
-7. [Read and write paths](#read-and-write-paths)
-8. [Import & export formats](#import--export-formats)
-9. [Theming](#theming)
-10. [Statistics: breakdown & trends](#statistics-breakdown--trends)
-11. [Features](#features)
-12. [Production and deployment](#production-and-deployment)
-13. [Google Play compliance](#google-play-compliance)
-14. [Privacy](#privacy)
-15. [Troubleshooting](#troubleshooting)
-16. [Suggested extensions](#suggested-extensions)
+1. [Storage modes](#storage-modes)
+2. [End-user app flow](#end-user-app-flow)
+3. [Backup and restore (CSV / Excel)](#backup-and-restore-csv--excel)
+4. [Developer setup](#developer-setup)
+5. [Run locally](#run-locally)
+6. [Architecture](#architecture)
+7. [Local data model](#local-data-model)
+8. [Read and write paths](#read-and-write-paths)
+9. [Import & export formats](#import--export-formats)
+10. [Theming](#theming)
+11. [Statistics: breakdown & trends](#statistics-breakdown--trends)
+12. [Features](#features)
+13. [Production and deployment](#production-and-deployment)
+14. [Google Play compliance](#google-play-compliance)
+15. [Privacy](#privacy)
+16. [Troubleshooting](#troubleshooting)
+17. [Suggested extensions](#suggested-extensions)
 
 ## End-user app flow
 

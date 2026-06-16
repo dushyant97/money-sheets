@@ -1,6 +1,6 @@
 import type { Transaction } from '../../shared/finance';
 import { transactionsToRows } from '../../shared/finance';
-import { parseTransactionsCsv } from '../../shared/csvImport';
+import { parseTransactionsCsvProgressive } from '../../shared/csvImport';
 
 // SheetJS is heavy, so load it on demand the first time the user imports or
 // exports an Excel file. This keeps it out of the initial app bundle.
@@ -11,14 +11,30 @@ function isExcelFile(file: File) {
   return name.endsWith('.xlsx') || name.endsWith('.xls') || name.endsWith('.xlsm') || name.endsWith('.xlsb');
 }
 
+/** Reports import progress as a fraction in the 0..1 range. */
+export type ImportProgress = (fraction: number) => void;
+
 /**
  * Read transactions from a user-selected file. Accepts `.csv` as well as Excel
  * workbooks (`.xlsx` / `.xls`). Excel is converted to CSV text in-memory and
  * reuses the same format-detection/parsing logic as direct CSV imports.
+ *
+ * `onProgress` is invoked with the overall completion fraction so large files
+ * can drive a percentage indicator. Reading/decoding the file occupies the first
+ * slice of the bar; row parsing fills the rest.
  */
-export async function readTransactionsFromFile(file: File): Promise<Transaction[]> {
+export async function readTransactionsFromFile(file: File, onProgress?: ImportProgress): Promise<Transaction[]> {
+  // Parsing rows is the bulk of the work, so the read/decode phase only takes
+  // the first slice of the bar and parsing covers the rest.
+  const READ_PHASE = 0.25;
+  const reportParse = onProgress
+    ? (fraction: number) => onProgress(READ_PHASE + fraction * (1 - READ_PHASE))
+    : undefined;
+
   if (isExcelFile(file)) {
+    onProgress?.(0.04);
     const XLSX = await loadXlsx();
+    onProgress?.(0.1);
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: 'array', cellDates: false });
     const firstSheetName = workbook.SheetNames[0];
@@ -27,11 +43,14 @@ export async function readTransactionsFromFile(file: File): Promise<Transaction[
     }
     const sheet = workbook.Sheets[firstSheetName];
     const csv = XLSX.utils.sheet_to_csv(sheet, { blankrows: false });
-    return parseTransactionsCsv(csv);
+    onProgress?.(READ_PHASE);
+    return parseTransactionsCsvProgressive(csv, reportParse);
   }
 
+  onProgress?.(0.05);
   const text = await file.text();
-  return parseTransactionsCsv(text);
+  onProgress?.(READ_PHASE);
+  return parseTransactionsCsvProgressive(text, reportParse);
 }
 
 /** Build and download an `.xlsx` workbook of all transactions. */

@@ -162,7 +162,14 @@ function rowToImportedTransaction(get: Getter, index: number): Transaction | nul
   };
 }
 
-export function parseTransactionsCsv(csvText: string): Transaction[] {
+type PreparedCsv = {
+  lines: string[];
+  headerIndex: Map<string, number>;
+  isNative: boolean;
+};
+
+/** Split + detect format. Shared by the sync and progressive parsers. */
+function prepareCsv(csvText: string): PreparedCsv {
   const lines = csvText
     .replace(/^\uFEFF/, '')
     .split(/\r?\n/)
@@ -187,27 +194,72 @@ export function parseTransactionsCsv(csvText: string): Transaction[] {
     throw new Error('Unrecognized CSV. Use a Money Sheets export, or a sheet with Date, Category, Amount and Income/Expense columns.');
   }
 
-  const dataRows = lines.slice(1).map((line) => parseCsvLine(line));
+  return { lines, headerIndex, isNative };
+}
 
-  const transactions = isNative
-    ? dataRows
-        .map((row) => rowToNativeTransaction(makeGetter(row, headerIndex)))
-        .filter((row): row is Transaction => Boolean(row))
-    : dataRows
-        .map((row, index) => rowToImportedTransaction(makeGetter(row, headerIndex), index))
-        .filter((row): row is Transaction => Boolean(row));
+function rowToTransaction(line: string, index: number, prepared: PreparedCsv): Transaction | null {
+  const row = parseCsvLine(line);
+  const get = makeGetter(row, prepared.headerIndex);
+  return prepared.isNative ? rowToNativeTransaction(get) : rowToImportedTransaction(get, index);
+}
 
-  if (transactions.length === 0) {
-    throw new Error('No valid transaction rows found in the CSV file.');
-  }
-
+function sortByDate(transactions: Transaction[]): Transaction[] {
   // Sort chronologically by date (and time when available) instead of by id.
   transactions.sort((left, right) => {
     if (left.date !== right.date) return left.date.localeCompare(right.date);
     return left.createdAt.localeCompare(right.createdAt);
   });
-
   return transactions;
+}
+
+export function parseTransactionsCsv(csvText: string): Transaction[] {
+  const prepared = prepareCsv(csvText);
+  const transactions: Transaction[] = [];
+
+  for (let index = 1; index < prepared.lines.length; index += 1) {
+    const txn = rowToTransaction(prepared.lines[index], index - 1, prepared);
+    if (txn) transactions.push(txn);
+  }
+
+  if (transactions.length === 0) {
+    throw new Error('No valid transaction rows found in the CSV file.');
+  }
+
+  return sortByDate(transactions);
+}
+
+/**
+ * Same as {@link parseTransactionsCsv} but processes rows in chunks, yielding to
+ * the event loop between chunks so a progress indicator can repaint. `onProgress`
+ * receives a fraction in the 0..1 range.
+ */
+export async function parseTransactionsCsvProgressive(
+  csvText: string,
+  onProgress?: (fraction: number) => void
+): Promise<Transaction[]> {
+  const prepared = prepareCsv(csvText);
+  const total = Math.max(prepared.lines.length - 1, 0);
+  const transactions: Transaction[] = [];
+  const CHUNK = 1500;
+
+  onProgress?.(0);
+  for (let index = 1; index < prepared.lines.length; index += 1) {
+    const txn = rowToTransaction(prepared.lines[index], index - 1, prepared);
+    if (txn) transactions.push(txn);
+
+    if (index % CHUNK === 0) {
+      onProgress?.(index / total);
+      // Let React flush the updated percentage before continuing.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+  onProgress?.(1);
+
+  if (transactions.length === 0) {
+    throw new Error('No valid transaction rows found in the CSV file.');
+  }
+
+  return sortByDate(transactions);
 }
 
 export function validateImportFileName(name: string) {

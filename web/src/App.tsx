@@ -26,6 +26,8 @@ import {
   type TrendGranularity
 } from './ledger';
 import type { Account, AccountBalance, Category, Transaction, TransactionType } from '../../shared/finance';
+import type { StorageMode, StoragePreferences } from '../../shared/storage/types';
+import { isTursoConfigComplete, isValidTursoUrl } from '../../shared/storage/prefs';
 import { Calculator } from './Calculator';
 import { useTheme } from './theme';
 import './styles.css';
@@ -109,21 +111,36 @@ function AppShell() {
       <Sidebar />
 
       <div className="main">
+        {ledger.reconnect ? (
+          <div className="reconnect-banner">
+            <span>🔄 Back online — your local copy and Turso differ. Choose which to keep.</span>
+            <div className="reconnect-actions">
+              <button className="ghost sm" onClick={() => void ledger.syncLocalToTurso()} disabled={ledger.busy}>
+                Push local to Turso
+              </button>
+              <button className="ghost sm" onClick={() => void ledger.pullFromTurso()} disabled={ledger.busy}>
+                Pull from Turso
+              </button>
+              <button className="ghost sm" onClick={() => ledger.dismissReconnect()}>Dismiss</button>
+            </div>
+          </div>
+        ) : null}
         {ledger.showcaseMode ? (
           <div className="showcase-banner">
             <span>🎬 Showcase mode — demo data only. Import a file or erase data to return to your own ledger.</span>
           </div>
         ) : null}
         <header className="topbar">
-          <div>
+          <div className="topbar-lead">
             <h1>{TITLES[ledger.mainTab] ?? 'Transactions'}</h1>
             {ledger.message ? (
-              <p className="status">
+              <p className="status" title={ledger.message}>
                 {ledger.busy ? <span className="auth-spinner" style={{ width: 12, height: 12, margin: 0, borderWidth: 2 }} /> : null}
-                {ledger.message}
+                <span className="status-text">{ledger.message}</span>
               </p>
             ) : null}
           </div>
+          <MonthNav />
           <div className="topbar-actions">
             <ThemeToggle />
             <button className="fab" onClick={() => { ledger.cancelEdit(); ledger.setShowAdd(true); }} aria-label="Add record">
@@ -149,6 +166,28 @@ function AppShell() {
       <MobileTabBar />
 
       {ledger.showAdd ? <AddModal /> : null}
+      {ledger.importProgress !== null ? <ImportProgressOverlay value={ledger.importProgress} /> : null}
+    </div>
+  );
+}
+
+function ImportProgressOverlay({ value }: { value: number }) {
+  const pct = Math.round(Math.max(0, Math.min(1, value)) * 100);
+  return (
+    <div className="modal-backdrop">
+      <div className="modal import-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="import-modal-head">
+          <span className="import-spin" aria-hidden />
+          <div>
+            <strong>Importing your data…</strong>
+            <span className="muted">Hang tight while we read and parse the file.</span>
+          </div>
+        </div>
+        <div className="import-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
+          <span className="import-bar-fill" style={{ width: `${pct}%` }} />
+        </div>
+        <div className="import-pct">{pct}%</div>
+      </div>
     </div>
   );
 }
@@ -241,11 +280,21 @@ function Sidebar() {
         </div>
       </div>
 
-      <div className="offline-pill">
-        <span className="offline-dot" />
-        Offline · saved on this device
-      </div>
+      <StoragePill />
     </aside>
+  );
+}
+
+function StoragePill() {
+  const { effectiveStorage } = useLedger();
+  let label = 'Offline · saved on this device';
+  if (effectiveStorage.isTursoFallback) label = 'Offline · local fallback';
+  else if (effectiveStorage.effectiveMode === 'turso') label = 'Turso · synced';
+  return (
+    <div className={`offline-pill ${effectiveStorage.effectiveMode === 'turso' ? 'online' : ''}`}>
+      <span className="offline-dot" />
+      {label}
+    </div>
   );
 }
 
@@ -479,7 +528,6 @@ function TransView() {
   return (
     <div className="stack">
       <div className="view-bar">
-        <MonthNav />
         <div className="pill-row">
           {HOME_VIEWS.map((view) => (
             <button
@@ -566,8 +614,10 @@ function TransView() {
               )}
             </>
           ) : null}
+        </div>
 
-          <div style={{ height: 18 }} />
+        <div className="trans-right">
+        <div className="panel filter-panel">
           <h3>Filters</h3>
           <div className="filter-grid">
             <select value={filters.type ?? 'all'} onChange={(e) => setFilters({ ...filters, type: e.target.value as typeof filters.type })}>
@@ -624,6 +674,7 @@ function TransView() {
               </section>
             );
           })}
+        </div>
         </div>
       </div>
 
@@ -1087,7 +1138,6 @@ function StatsView() {
   return (
     <div className="stack">
       <div className="view-bar">
-        <MonthNav />
         <div className="segmented">
           <button className={tab === 'breakdown' ? 'seg active' : 'seg'} onClick={() => setTab('breakdown')}>Breakdown</button>
           <button className={tab === 'trends' ? 'seg active' : 'seg'} onClick={() => setTab('trends')}>Trends</button>
@@ -1267,7 +1317,6 @@ function CategoriesView() {
   return (
     <div className="stack">
       <div className="view-bar">
-        <MonthNav />
         <div className="cat-toolbar">
           <CategoryPicker
             expenseCats={expenseCats}
@@ -1303,7 +1352,7 @@ function CategoriesView() {
         </div>
       </div>
 
-      <div className="panel list-panel">
+      <div className="panel list-panel compact">
         {visible.length === 0 ? (
           <div className="empty">
             <span className="emoji">🗂️</span>
@@ -1456,6 +1505,8 @@ function MoreView() {
 
   return (
     <div className="stack">
+      <StorageSettingsPanel />
+
       <SettingsPanel />
 
       <ManagePanel />
@@ -1520,18 +1571,231 @@ function ShowcaseConfirmModal({ onConfirm, onCancel }: { onConfirm: () => void; 
       <div className="modal confirm-modal" onClick={(e) => e.stopPropagation()}>
         <div className="confirm-icon warn">⚠️</div>
         <h3 style={{ margin: 0 }}>Enable Showcase Mode?</h3>
-        <p className="muted" style={{ margin: 0, lineHeight: 1.55, textAlign: 'center' }}>
-          All data currently on this device will be <strong>permanently replaced</strong> with randomly
-          generated demo data (last 6 months of sample income &amp; expenses).
-          <br />
-          <br />
-          Export a backup first if you need to keep your real records.
+        <p className="muted confirm-text">
+          All data currently set will be permanently lost. Export a backup first if you need to keep your real
+          records.
         </p>
         <div className="confirm-actions">
           <button className="ghost" onClick={onCancel}>Cancel</button>
-          <button className="primary" onClick={onConfirm}>Replace data &amp; continue</button>
+          <button className="primary" onClick={onConfirm}>Continue</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function activeStorageDisplay(info: ReturnType<typeof useLedger>['effectiveStorage']) {
+  if (info.isTursoFallback) {
+    return {
+      icon: '☁️',
+      title: 'Turso unavailable',
+      subtitle: 'Offline — using the local copy on this device',
+      badge: 'OFFLINE FALLBACK',
+      tone: 'warn' as const
+    };
+  }
+  if (info.effectiveMode === 'turso') {
+    return {
+      icon: '☁️',
+      title: 'Turso DB',
+      subtitle: 'Synced across devices that use these credentials',
+      badge: 'ACTIVE',
+      tone: 'ok' as const
+    };
+  }
+  return {
+    icon: '💻',
+    title: 'Local Storage',
+    subtitle: 'Data stored on this device only',
+    badge: 'ACTIVE',
+    tone: 'ok' as const
+  };
+}
+
+function StorageReplaceModal({
+  targetMode,
+  onConfirm,
+  onCancel
+}: {
+  targetMode: StorageMode;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const targetLabel = targetMode === 'turso' ? 'Turso DB' : 'Local Storage';
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal confirm-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="confirm-icon warn">⚠️</div>
+        <h3 style={{ margin: 0 }}>Replace data in {targetLabel}?</h3>
+        <p className="muted confirm-text">
+          {targetLabel} already has saved records. Continuing overwrites them with the data from your current
+          store. This cannot be undone — export a backup first if you need it.
+        </p>
+        <div className="confirm-actions">
+          <button className="ghost" onClick={onCancel}>Cancel</button>
+          <button className="primary" onClick={onConfirm}>Replace &amp; continue</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StorageSettingsPanel() {
+  const { storagePrefs, effectiveStorage, busy, testTursoConnection, applyStorageSettings } = useLedger();
+
+  const [draftMode, setDraftMode] = useState<StorageMode>(storagePrefs.mode);
+  const [url, setUrl] = useState(storagePrefs.turso.url);
+  const [token, setToken] = useState(storagePrefs.turso.authToken);
+  const [showToken, setShowToken] = useState(false);
+  const [test, setTest] = useState<{ state: 'idle' | 'testing' | 'ok' | 'error'; message?: string }>({ state: 'idle' });
+  const [replaceTarget, setReplaceTarget] = useState<StorageMode | null>(null);
+  const confirmResolverRef = useRef<((value: boolean) => void) | null>(null);
+
+  const active = activeStorageDisplay(effectiveStorage);
+  const online = effectiveStorage.isOnline;
+  const draftTurso = { url: url.trim(), authToken: token.trim() };
+  const tursoComplete = isTursoConfigComplete(draftTurso);
+  const urlInvalid = url.trim().length > 0 && !isValidTursoUrl(url);
+
+  const dirty =
+    draftMode !== storagePrefs.mode ||
+    url.trim() !== storagePrefs.turso.url.trim() ||
+    token.trim() !== storagePrefs.turso.authToken.trim();
+  const canSave = dirty && (draftMode === 'local' || tursoComplete) && !busy;
+
+  function resetDraft() {
+    setDraftMode(storagePrefs.mode);
+    setUrl(storagePrefs.turso.url);
+    setToken(storagePrefs.turso.authToken);
+    setTest({ state: 'idle' });
+  }
+
+  function confirmReplace(targetMode: StorageMode): Promise<boolean> {
+    setReplaceTarget(targetMode);
+    return new Promise<boolean>((resolve) => {
+      confirmResolverRef.current = resolve;
+    });
+  }
+
+  function resolveConfirm(value: boolean) {
+    setReplaceTarget(null);
+    confirmResolverRef.current?.(value);
+    confirmResolverRef.current = null;
+  }
+
+  async function runTest() {
+    setTest({ state: 'testing' });
+    try {
+      await testTursoConnection(draftTurso);
+      setTest({ state: 'ok', message: 'Connection successful — schema is ready.' });
+    } catch (error) {
+      setTest({ state: 'error', message: error instanceof Error ? error.message : 'Connection failed.' });
+    }
+  }
+
+  async function save() {
+    const next: StoragePreferences = { mode: draftMode, turso: draftTurso };
+    await applyStorageSettings(next, confirmReplace);
+    // Success triggers a full reload; if it returns we either aborted or errored.
+  }
+
+  return (
+    <div className="panel storage-panel">
+      <div className="panel-head">
+        <h3>Storage</h3>
+      </div>
+
+      <span className="storage-section-label">Active storage</span>
+      <div className={`storage-active-card ${active.tone}`}>
+        <span className="storage-active-ico">{active.icon}</span>
+        <div className="storage-active-body">
+          <strong>{active.title}</strong>
+          <span className="muted">{active.subtitle}</span>
+        </div>
+        <span className={`storage-badge ${active.tone}`}>{active.badge}</span>
+      </div>
+
+      <span className="storage-section-label">Change storage mode</span>
+      <div className="storage-mode-grid">
+        <button
+          type="button"
+          className={`storage-mode-card ${draftMode === 'local' ? 'selected' : ''}`}
+          onClick={() => setDraftMode('local')}
+        >
+          <span className="storage-mode-ico">💻</span>
+          <strong>Local Storage</strong>
+          <span className="muted">This device only</span>
+        </button>
+        <button
+          type="button"
+          className={`storage-mode-card ${draftMode === 'turso' ? 'selected' : ''} ${online ? '' : 'disabled'}`}
+          onClick={() => online && setDraftMode('turso')}
+          disabled={!online}
+          title={online ? undefined : 'Requires an internet connection'}
+        >
+          <span className="storage-mode-ico">☁️</span>
+          <strong>Turso DB</strong>
+          <span className="muted">{online ? 'Synced across devices' : 'Requires internet'}</span>
+        </button>
+      </div>
+      <p className="storage-hint muted">Changes apply after Save &amp; Reload.</p>
+
+      {draftMode === 'turso' ? (
+        <div className="storage-config">
+          <span className="storage-section-label">Turso configuration</span>
+          <label className="field-group">
+            Database URL
+            <input
+              type="text"
+              placeholder="libsql://your-db-name.turso.io"
+              value={url}
+              onChange={(e) => { setUrl(e.target.value); setTest({ state: 'idle' }); }}
+              spellCheck={false}
+              autoCapitalize="none"
+            />
+          </label>
+          {urlInvalid ? <span className="storage-test-result error">Enter a libsql:// or https:// URL.</span> : null}
+          <label className="field-group">
+            Auth token
+            <span className="storage-token-row">
+              <input
+                type={showToken ? 'text' : 'password'}
+                placeholder="eyJ…"
+                value={token}
+                onChange={(e) => { setToken(e.target.value); setTest({ state: 'idle' }); }}
+                spellCheck={false}
+                autoCapitalize="none"
+              />
+              <button type="button" className="ghost sm" onClick={() => setShowToken((v) => !v)}>
+                {showToken ? 'Hide' : 'Show'}
+              </button>
+            </span>
+          </label>
+          <p className="storage-hint muted">Credentials are stored only on this device (in localStorage).</p>
+          <div className="storage-test-row">
+            <button type="button" className="ghost sm" onClick={() => void runTest()} disabled={!tursoComplete || test.state === 'testing'}>
+              {test.state === 'testing' ? 'Testing…' : 'Test connection'}
+            </button>
+            {test.state === 'ok' ? <span className="storage-test-result ok">{test.message}</span> : null}
+            {test.state === 'error' ? <span className="storage-test-result error">{test.message}</span> : null}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="storage-actions">
+        <button type="button" className="ghost" onClick={resetDraft} disabled={!dirty || busy}>Cancel</button>
+        <button type="button" className="primary" onClick={() => void save()} disabled={!canSave}>
+          Save &amp; Reload
+        </button>
+      </div>
+
+      {replaceTarget ? (
+        <StorageReplaceModal
+          targetMode={replaceTarget}
+          onConfirm={() => resolveConfirm(true)}
+          onCancel={() => resolveConfirm(false)}
+        />
+      ) : null}
     </div>
   );
 }
