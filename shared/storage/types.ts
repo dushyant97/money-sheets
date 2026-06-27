@@ -1,4 +1,5 @@
-import type { LedgerSnapshot } from '../ledgerStore';
+import type { Account, Budget, Category, Transaction } from '../finance';
+import type { LedgerSettings, LedgerSnapshot } from '../ledgerStore';
 
 /** Where the ledger is persisted. */
 export type StorageMode = 'local' | 'turso';
@@ -47,3 +48,52 @@ export const DEFAULT_STORAGE_PREFERENCES: StoragePreferences = {
   mode: 'local',
   turso: { url: '', authToken: '' }
 };
+
+/**
+ * Granular storage contract backing the normalized Turso repository (phase 1).
+ * The local adapter satisfies the snapshot-level methods via `load`/`save`; the
+ * Turso repository additionally supports the per-entity methods so a single
+ * mutation no longer rewrites the whole ledger. `month` filters are wired into
+ * the UI in a later phase (Records/Stats scoped reads).
+ */
+export interface TransactionStore {
+  loadTransactions(month?: string): Promise<Transaction[]>;
+  insertTransaction(transaction: Transaction): Promise<void>;
+  updateTransaction(transaction: Transaction): Promise<void>;
+  deleteTransaction(id: string): Promise<void>;
+}
+
+export interface AccountStore {
+  loadAccounts(): Promise<Account[]>;
+  saveAccount(account: Account): Promise<void>;
+  removeAccount(name: string): Promise<void>;
+}
+
+export interface CategoryStore {
+  loadCategories(): Promise<Category[]>;
+  saveCategory(category: Category): Promise<void>;
+  removeCategory(name: string): Promise<void>;
+}
+
+export interface BudgetStore {
+  loadBudgets(month?: string): Promise<Budget[]>;
+  upsertBudget(budget: Budget): Promise<void>;
+}
+
+export interface SettingsStore {
+  loadSettings(): Promise<LedgerSettings>;
+  saveSettings(settings: LedgerSettings): Promise<void>;
+}
+
+export interface LedgerRepository
+  extends TransactionStore,
+    AccountStore,
+    CategoryStore,
+    BudgetStore,
+    SettingsStore {
+  /** Assemble the full snapshot for the UI and the local cache. */
+  loadSnapshot(): Promise<LedgerSnapshot>;
+  /** Bump the `ledger_updated_at` marker used for sync comparison. */
+  touchLedger(): Promise<void>;
+  clear(): Promise<LedgerSnapshot>;
+}

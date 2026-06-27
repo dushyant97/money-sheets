@@ -327,6 +327,36 @@ a { color: inherit; text-decoration: none; }
   color: var(--accent);
 }
 .offline-pill.online .offline-dot { background: var(--accent); animation: none; }
+.offline-pill.warn {
+  background: rgba(255, 176, 32, 0.1);
+  border-color: rgba(255, 176, 32, 0.32);
+  color: #d98c00;
+}
+.offline-pill.warn .offline-dot { background: #ffb020; animation: none; }
+.sync-now-btn { margin-left: auto; }
+.sync-status-bar.compact {
+  padding: 6px 10px;
+  font-size: 0.72rem;
+  max-width: min(100%, 280px);
+}
+.sync-status-bar .sync-status-label { flex: 1; min-width: 0; }
+.topbar-actions .sync-status-bar.compact { margin-right: 4px; }
+
+.sync-conflict-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  width: 100%;
+}
+.sync-conflict-option {
+  display: grid;
+  gap: 2px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  text-align: left;
+}
+.sync-conflict-option .muted { font-size: 0.78rem; }
 
 .offline-dot {
   width: 8px;
@@ -1374,6 +1404,12 @@ textarea { min-height: 76px; resize: vertical; }
 .confirm-text { margin: 0; font-size: 0.86rem; line-height: 1.5; text-align: center; }
 
 /* Import progress overlay */
+.export-options-modal { max-width: 460px; }
+.export-options { display: grid; gap: 12px; }
+.export-options .action-card { width: 100%; text-align: left; align-items: flex-start; }
+.export-options-note { margin: 0; font-size: 0.82rem; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
 .import-modal { max-width: 380px; gap: 14px; }
 .import-modal-head { display: flex; align-items: center; gap: 12px; }
 .import-modal-head strong { display: block; font-size: 0.96rem; }
@@ -1501,20 +1537,6 @@ textarea { min-height: 76px; resize: vertical; }
 
 .storage-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
 .ghost.sm, .primary.sm { padding: 7px 13px; font-size: 0.8rem; }
-
-/* Reconnect / storage banner */
-.reconnect-banner {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  padding: 10px 18px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 16%, transparent), color-mix(in srgb, var(--accent-2) 14%, transparent));
-  border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
-  font-size: 0.82rem;
-  font-weight: 600;
-}
-.reconnect-banner .reconnect-actions { display: flex; gap: 8px; margin-left: auto; }
 
 /* App footer (license + author) — pinned to the bottom of short pages. */
 .app-footer {

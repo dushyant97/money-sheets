@@ -84,4 +84,4 @@ If this policy changes, the updated version will be published in the app's repos
 
 ## Contact
 
-For privacy questions, contact the app developer at: **REPLACE_WITH_YOUR_CONTACT_EMAIL**.
+For privacy questions, contact the app developer at: **dushyant.sharma1997@gmail.com**.

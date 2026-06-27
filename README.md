@@ -40,14 +40,35 @@ The web app can store its ledger in one of two places. You choose this in the ap
 | **Local Storage** | This browser only (`localStorage`) | None — export/import CSV to move data | Yes |
 | **Turso DB** | Your Turso (libSQL) database in the cloud | Across any device using the same credentials | No |
 
-The full ledger is stored as a single JSON snapshot — in `localStorage` for local mode, and in a one-row `ledger_snapshot` table for Turso. The data shape is identical, so switching modes is lossless.
+Locally the ledger is stored as a single JSON snapshot in `localStorage`. On **web**, Turso now uses a **normalized schema** — separate `transactions`, `accounts`, `categories`, `budgets`, and `settings` tables — so adding one transaction writes one row instead of re-uploading the whole ledger, and the `transactions` table is indexed by `month` for fast scoped queries. The web app still assembles a full snapshot for the UI, so the data shape the screens see is unchanged. *(The mobile app still uses the single-row `ledger_snapshot` model; see the migration note below.)*
 
-### How Turso mode behaves
+#### Migration from the old single-blob table
 
-- **Online:** reads and writes go to your Turso database. A copy is also kept in `localStorage` as an offline cache.
-- **Offline:** if the browser loses connectivity, the app automatically falls back to the local copy and marks Turso as unavailable. You can keep working; changes are saved locally.
-- **Back online:** if your local copy and the Turso copy diverged while offline, a banner lets you **push local to Turso**, **pull from Turso**, or dismiss and decide later. There is no automatic merge.
-- **Switching modes** copies your current data into the target store. If the target already has data, you confirm before it is replaced.
+The first time the web app connects to a Turso database that still holds the old `ledger_snapshot` JSON, it migrates automatically:
+
+- It creates the normalized tables and copies every transaction, account, category, budget, and setting into them.
+- The original blob is preserved in a `ledger_snapshot_backup` table, and the database is stamped (`schema_meta.schema_version = 2`).
+- Migration is **idempotent** — it runs once and is safely skipped on every later connect. An interrupted migration simply re-runs, because every write is an upsert keyed by primary key.
+
+> Mixed clients: the **mobile** app still reads/writes the old `ledger_snapshot` blob, which the web app stops updating after migration. Until mobile is upgraded, use one client per Turso database to avoid divergence.
+
+### How Turso mode behaves (web)
+
+The web app handles four connection cases on boot, on a storage-mode switch, and on reconnect:
+
+| Case | This device | Turso | Behavior |
+|---|---|---|---|
+| 1 | Empty | Empty | Start fresh; new edits write to Turso and mirror to the local cache. |
+| 2 | — | — (offline) | Operate on the local cache only; reconcile on reconnect. |
+| 3 | Empty | Has data | Pull Turso into the UI and local cache. |
+| 4 | Has data | Has data | **Prompt**: keep this device (overwrites Turso) or keep Turso (overwrites this device). No silent merge. |
+
+A **sync status** indicator in the sidebar shows `Synced with Turso`, `Not synced with Turso` (with a **Sync now** button), `Offline · local copy`, or `Local only`. Sync comparison uses a `ledger_updated_at` marker stored in the `settings` table.
+
+- **Offline:** the app falls back to the local cache and marks Turso unavailable. You can keep working; changes are saved locally.
+- **Back online:** it pulls when only Turso changed, prompts on a genuine two-sided conflict, and otherwise flags "Not synced" so you can push with **Sync now**.
+- **Switching modes** copies your current data into the target store, confirming before replacing existing data.
+- **Settings → Import from Excel file:** when Turso mode is active, you can import an Excel/CSV file and push it straight to Turso (replacing the remote database and the local cache). This is disabled while offline.
 
 ### Set up Turso
 
@@ -168,8 +189,19 @@ flowchart LR
 
 1. Open **More** (or the sidebar on web).
 2. Tap **Export Excel** (web) / **Export CSV** (mobile).
-3. **Web:** downloads `money-sheets-YYYY-MM.xlsx` (a real Excel workbook with a `Transactions` sheet).
-4. **Mobile:** opens the system share sheet so the user can save or send a CSV file.
+3. **Web:** a dialog asks where to save the workbook:
+   - **Download to default location** — saves `money-sheets.xlsx` to your Downloads folder (works in every browser).
+   - **Choose a location…** — pick a file to create or replace on your device (Chrome/Edge, via the
+     File System Access API). In Safari and Firefox only the default download is offered.
+
+   A progress overlay shows while the workbook is built.
+4. **Mobile:** opens the system share sheet so the user can save or send a CSV file. *(Mobile export is unchanged in this release.)*
+
+The web workbook (`money-sheets.xlsx`) contains:
+
+- **All Transactions** — every transaction (this sheet stays first so imports keep working).
+- One **`YYYY-MM`** sheet per month (e.g. `2026-06`), each holding only that month's transactions.
+- **Summary** — one row per month with `Month`, `Income`, `Expense`, `Net`, and `Transaction Count`.
 
 Both formats open in Excel, LibreOffice, or Google Sheets.
 
@@ -191,6 +223,11 @@ with transactions from the file. Budgets will also be reset.
 4. The app parses the file (Excel is converted to rows in-memory via SheetJS), auto-detects the
    column layout, **sorts the rows by date**, rebuilds accounts and categories from the transaction
    rows, and saves the new ledger locally.
+
+> **Multi-sheet workbooks:** import reads the master transaction sheet by name — it prefers
+> `All Transactions`, then a legacy `Transactions` sheet, then the first sheet whose header row
+> matches the native format. The monthly `YYYY-MM` and `Summary` sheets are ignored, so you never
+> need to import each month individually. Older single-sheet exports still import unchanged.
 
 ### Move data between devices
 
@@ -922,10 +959,4 @@ Very large ledgers (thousands of transactions) may hit browser storage limits (~
 
 ## License
 
-Add your license here.
-
-Example:
-
-```text
-MIT
-```
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

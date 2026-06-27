@@ -1,12 +1,17 @@
-import { type LedgerSnapshot, createDefaultLedger, parseStoredLedger } from '../../../shared/ledgerStore';
+import { type LedgerSnapshot, createDefaultLedger } from '../../../shared/ledgerStore';
 import type { LedgerStorageAdapter, TursoConfig } from '../../../shared/storage/types';
+import type { SqlClient } from '../../../shared/storage/sqlClient';
+import { PING_SQL } from '../../../shared/storage/tursoSchema';
+import { ensureMigrated, ensureNormalizedSchema } from '../../../shared/storage/migration';
 import {
-  CREATE_LEDGER_TABLE_SQL,
-  DELETE_SNAPSHOT_SQL,
-  PING_SQL,
-  SELECT_SNAPSHOT_SQL,
-  UPSERT_SNAPSHOT_SQL
-} from '../../../shared/storage/tursoSchema';
+  applyChange,
+  getLedgerUpdatedAt,
+  loadSnapshot,
+  saveSnapshot,
+  type LedgerChange
+} from '../../../shared/storage/repository';
+
+export type { LedgerChange } from '../../../shared/storage/repository';
 
 // The libSQL web client pulls in a non-trivial amount of code, so load it on
 // demand the first time Turso is actually used. Offline-only users never pay
@@ -19,20 +24,39 @@ async function createClient(config: TursoConfig): Promise<LibsqlClient> {
   return create({ url: config.url.trim(), authToken: config.authToken.trim() });
 }
 
-async function ensureSchema(client: LibsqlClient): Promise<void> {
-  await client.execute(CREATE_LEDGER_TABLE_SQL);
+/**
+ * Run `fn` against a connected client, migrating to the normalized v2 schema
+ * first. The migration is idempotent and a no-op once stamped, so it is safe to
+ * run on every operation. Errors are wrapped with a readable message.
+ */
+async function withMigratedClient<T>(
+  config: TursoConfig,
+  fn: (client: SqlClient) => Promise<T>
+): Promise<T> {
+  let client: LibsqlClient | null = null;
+  try {
+    client = await createClient(config);
+    const sqlClient = client as unknown as SqlClient;
+    await ensureMigrated(sqlClient);
+    return await fn(sqlClient);
+  } catch (error) {
+    throw new Error(tursoErrorMessage(error));
+  } finally {
+    client?.close();
+  }
 }
 
 /**
  * Verify the credentials work and the schema exists. Throws with a readable
- * message on failure. Used by the "Test connection" button (does not persist).
+ * message on failure. Used by the "Test connection" button — only ensures the
+ * tables exist (no data migration) so it stays fast and side-effect free.
  */
 export async function testTursoConnection(config: TursoConfig): Promise<void> {
   let client: LibsqlClient | null = null;
   try {
     client = await createClient(config);
     await client.execute(PING_SQL);
-    await ensureSchema(client);
+    await ensureNormalizedSchema(client as unknown as SqlClient);
   } catch (error) {
     throw new Error(tursoErrorMessage(error));
   } finally {
@@ -40,53 +64,36 @@ export async function testTursoConnection(config: TursoConfig): Promise<void> {
   }
 }
 
+/** Assemble the full ledger from the normalized tables. */
 export async function loadTursoLedger(config: TursoConfig): Promise<LedgerSnapshot> {
-  let client: LibsqlClient | null = null;
-  try {
-    client = await createClient(config);
-    await ensureSchema(client);
-    const result = await client.execute(SELECT_SNAPSHOT_SQL);
-    const raw = result.rows[0]?.snapshot_json;
-    return parseStoredLedger(typeof raw === 'string' ? raw : null);
-  } catch (error) {
-    throw new Error(tursoErrorMessage(error));
-  } finally {
-    client?.close();
-  }
+  return withMigratedClient(config, (client) => loadSnapshot(client));
 }
 
+/** Overwrite the entire Turso store with a snapshot (import/seed/switch). */
 export async function saveTursoLedger(config: TursoConfig, snapshot: LedgerSnapshot): Promise<void> {
-  let client: LibsqlClient | null = null;
-  try {
-    client = await createClient(config);
-    await ensureSchema(client);
-    await client.execute({
-      sql: UPSERT_SNAPSHOT_SQL,
-      args: [JSON.stringify(snapshot), snapshot.updatedAt ?? new Date().toISOString()]
-    });
-  } catch (error) {
-    throw new Error(tursoErrorMessage(error));
-  } finally {
-    client?.close();
-  }
+  await withMigratedClient(config, (client) => saveSnapshot(client, snapshot));
+}
+
+/**
+ * Apply one granular mutation to Turso (single-row write) and bump the sync
+ * marker. Falls back to a full rewrite when no change descriptor is supplied.
+ */
+export async function applyTursoChange(
+  config: TursoConfig,
+  snapshot: LedgerSnapshot,
+  change?: LedgerChange
+): Promise<void> {
+  await withMigratedClient(config, (client) => applyChange(client, snapshot, change));
+}
+
+/** The `ledger_updated_at` marker, for sync/conflict comparison. */
+export async function loadTursoUpdatedAt(config: TursoConfig): Promise<string | null> {
+  return withMigratedClient(config, (client) => getLedgerUpdatedAt(client));
 }
 
 export async function clearTursoLedger(config: TursoConfig): Promise<LedgerSnapshot> {
   const fresh = createDefaultLedger();
-  let client: LibsqlClient | null = null;
-  try {
-    client = await createClient(config);
-    await ensureSchema(client);
-    await client.execute(DELETE_SNAPSHOT_SQL);
-    await client.execute({
-      sql: UPSERT_SNAPSHOT_SQL,
-      args: [JSON.stringify(fresh), fresh.updatedAt]
-    });
-  } catch (error) {
-    throw new Error(tursoErrorMessage(error));
-  } finally {
-    client?.close();
-  }
+  await withMigratedClient(config, (client) => saveSnapshot(client, fresh));
   return fresh;
 }
 

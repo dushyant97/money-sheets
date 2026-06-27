@@ -30,6 +30,9 @@ import { NAV as SHARED_NAV, TAB_TITLES } from '../../shared/nav';
 import type { StorageMode, StoragePreferences } from '../../shared/storage/types';
 import { isTursoConfigComplete, isValidTursoUrl } from '../../shared/storage/prefs';
 import { Calculator } from './Calculator';
+import { ProgressOverlay } from './components/ProgressOverlay';
+import { ExportOptionsModal } from './components/ExportOptionsModal';
+import { SyncStatusBar } from './components/SyncStatusBar';
 import { useTheme } from './theme';
 import './styles.css';
 
@@ -99,20 +102,6 @@ function AppShell() {
       <Sidebar />
 
       <div className="main">
-        {ledger.reconnect ? (
-          <div className="reconnect-banner">
-            <span>🔄 Back online — your local copy and Turso differ. Choose which to keep.</span>
-            <div className="reconnect-actions">
-              <button className="ghost sm" onClick={() => void ledger.syncLocalToTurso()} disabled={ledger.busy}>
-                Push local to Turso
-              </button>
-              <button className="ghost sm" onClick={() => void ledger.pullFromTurso()} disabled={ledger.busy}>
-                Pull from Turso
-              </button>
-              <button className="ghost sm" onClick={() => ledger.dismissReconnect()}>Dismiss</button>
-            </div>
-          </div>
-        ) : null}
         {ledger.showcaseMode ? (
           <div className="showcase-banner">
             <span>🎬 Showcase mode — demo data only. Import a file or erase data to return to your own ledger.</span>
@@ -130,6 +119,7 @@ function AppShell() {
           </div>
           <MonthNav />
           <div className="topbar-actions">
+            <SyncStatusBar compact />
             <ThemeToggle />
             <button className="fab" onClick={() => { ledger.cancelEdit(); ledger.setShowAdd(true); }} aria-label="Add record">
               <span className="plus">+</span> <span className="fab-text">Add record</span>
@@ -154,27 +144,79 @@ function AppShell() {
       <MobileTabBar />
 
       {ledger.showAdd ? <AddModal /> : null}
-      {ledger.importProgress !== null ? <ImportProgressOverlay value={ledger.importProgress} /> : null}
+      {ledger.exportPrompt ? (
+        <ExportOptionsModal
+          onChoose={(destination) => void ledger.exportData(destination)}
+          onCancel={() => ledger.cancelExport()}
+        />
+      ) : null}
+      {ledger.importProgress !== null ? (
+        <ProgressOverlay
+          value={ledger.importProgress}
+          title="Importing your data…"
+          subtitle="Hang tight while we read and parse the file."
+        />
+      ) : null}
+      {ledger.exportProgress !== null ? (
+        <ProgressOverlay
+          value={ledger.exportProgress}
+          title="Exporting your workbook…"
+          subtitle="Building the monthly sheets and summary."
+        />
+      ) : null}
+      {ledger.conflict ? (
+        <SyncConflictModal
+          local={ledger.conflict.local}
+          remote={ledger.conflict.remote}
+          busy={ledger.busy}
+          onChoose={(choice) => void ledger.resolveConflict(choice)}
+        />
+      ) : null}
     </div>
   );
 }
 
-function ImportProgressOverlay({ value }: { value: number }) {
-  const pct = Math.round(Math.max(0, Math.min(1, value)) * 100);
+function SyncConflictModal({
+  local,
+  remote,
+  busy,
+  onChoose
+}: {
+  local: { transactions: unknown[]; updatedAt: string };
+  remote: { transactions: unknown[]; updatedAt: string };
+  busy: boolean;
+  onChoose: (choice: 'local' | 'turso') => void;
+}) {
+  const when = (iso: string) => (iso ? new Date(iso).toLocaleString() : 'unknown');
   return (
     <div className="modal-backdrop">
-      <div className="modal import-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="import-modal-head">
-          <span className="import-spin" aria-hidden />
-          <div>
-            <strong>Importing your data…</strong>
-            <span className="muted">Hang tight while we read and parse the file.</span>
+      <div className="modal confirm-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="confirm-icon warn">🔄</div>
+        <h3 style={{ margin: 0 }}>Both copies have data</h3>
+        <p className="muted confirm-text">
+          This device and your Turso database both contain transactions. Choose which copy to keep —
+          the other will be overwritten. This cannot be undone.
+        </p>
+        <div className="sync-conflict-grid">
+          <div className="sync-conflict-option">
+            <strong>This device</strong>
+            <span className="muted">{local.transactions.length} transactions</span>
+            <span className="muted">Updated {when(local.updatedAt)}</span>
+          </div>
+          <div className="sync-conflict-option">
+            <strong>Turso</strong>
+            <span className="muted">{remote.transactions.length} transactions</span>
+            <span className="muted">Updated {when(remote.updatedAt)}</span>
           </div>
         </div>
-        <div className="import-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
-          <span className="import-bar-fill" style={{ width: `${pct}%` }} />
+        <div className="confirm-actions">
+          <button className="ghost" disabled={busy} onClick={() => onChoose('local')}>
+            Use this device
+          </button>
+          <button className="primary" disabled={busy} onClick={() => onChoose('turso')}>
+            Use Turso
+          </button>
         </div>
-        <div className="import-pct">{pct}%</div>
       </div>
     </div>
   );
@@ -258,7 +300,7 @@ function Sidebar() {
           <button className="side-link" onClick={() => void ledger.refresh()}>
             <span className="ico">↻</span> Refresh
           </button>
-          <button className="side-link" onClick={() => void ledger.exportData()}>
+          <button className="side-link" onClick={() => ledger.beginExport()}>
             <span className="ico">⬇</span> Export Excel
           </button>
           <ImportButton />
@@ -268,21 +310,8 @@ function Sidebar() {
         </div>
       </div>
 
-      <StoragePill />
+      <SyncStatusBar />
     </aside>
-  );
-}
-
-function StoragePill() {
-  const { effectiveStorage } = useLedger();
-  let label = 'Offline · saved on this device';
-  if (effectiveStorage.isTursoFallback) label = 'Offline · local fallback';
-  else if (effectiveStorage.effectiveMode === 'turso') label = 'Turso · synced';
-  return (
-    <div className={`offline-pill ${effectiveStorage.effectiveMode === 'turso' ? 'online' : ''}`}>
-      <span className="offline-dot" />
-      {label}
-    </div>
   );
 }
 
@@ -1486,7 +1515,7 @@ function AccountsView() {
 }
 
 function MoreView() {
-  const { budgets, transactions, selectedMonth, saveBudget, categories, exportData, resetAllData } = useLedger();
+  const { budgets, transactions, selectedMonth, saveBudget, categories, beginExport, resetAllData } = useLedger();
   const month = monthKey(selectedMonth);
   const progress = budgetProgressForMonth(budgets, transactions, month);
   const expenseCategories = categories.filter((c) => c.active && c.type === 'expense');
@@ -1536,7 +1565,7 @@ function MoreView() {
           file. Importing replaces everything after you confirm.
         </p>
         <div className="action-cards">
-          <button className="action-card" onClick={() => void exportData()}>
+          <button className="action-card" onClick={() => beginExport()}>
             <span className="ac-ico">⬇️</span>
             <strong>Export Excel</strong>
             <span>Download all transactions as an .xlsx workbook.</span>
@@ -1629,7 +1658,9 @@ function StorageReplaceModal({
 }
 
 function StorageSettingsPanel() {
-  const { storagePrefs, effectiveStorage, busy, testTursoConnection, applyStorageSettings } = useLedger();
+  const { storagePrefs, effectiveStorage, busy, testTursoConnection, applyStorageSettings, importExcelToTurso } =
+    useLedger();
+  const excelInputRef = useRef<HTMLInputElement>(null);
 
   const [draftMode, setDraftMode] = useState<StorageMode>(storagePrefs.mode);
   const [url, setUrl] = useState(storagePrefs.turso.url);
@@ -1776,6 +1807,39 @@ function StorageSettingsPanel() {
           Save &amp; Reload
         </button>
       </div>
+
+      {storagePrefs.mode === 'turso' ? (
+        <div className="storage-config" style={{ marginTop: 18, paddingTop: 18, borderTop: '1px solid var(--border-soft)' }}>
+          <span className="storage-section-label">Import from Excel file</span>
+          <p className="storage-hint muted">
+            Read transactions from an Excel/CSV file and push them to your Turso database. This replaces
+            the data in Turso and on this device.
+          </p>
+          <input
+            ref={excelInputRef}
+            type="file"
+            accept=".xlsx,.xls,.xlsm,.xlsb,.csv"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (file) void importExcelToTurso(file);
+            }}
+          />
+          <div className="storage-test-row">
+            <button
+              type="button"
+              className="ghost sm"
+              onClick={() => excelInputRef.current?.click()}
+              disabled={busy || !online}
+              title={online ? undefined : 'Connect to Turso to import.'}
+            >
+              Import Excel → Turso
+            </button>
+            {!online ? <span className="storage-test-result error">Connect to Turso to import.</span> : null}
+          </div>
+        </div>
+      ) : null}
 
       {replaceTarget ? (
         <StorageReplaceModal

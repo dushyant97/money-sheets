@@ -19,10 +19,12 @@ export function resolveEffectiveStorage(prefs: StoragePreferences): EffectiveSto
   const wantsTurso = prefs.mode === 'turso' && isTursoConfigComplete(prefs.turso);
   const tursoUsable = wantsTurso && online;
 
+  const effectiveMode = tursoUsable ? 'turso' : 'local';
   return {
     preferredMode: prefs.mode,
-    effectiveMode: tursoUsable ? 'turso' : 'local',
-    isTursoFallback: wantsTurso && !online,
+    effectiveMode,
+    /** Turso is selected but reads/writes are using the local cache right now. */
+    isTursoFallback: wantsTurso && effectiveMode !== 'turso',
     isOnline: online
   };
 }
