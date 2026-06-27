@@ -477,8 +477,8 @@ function DayTransactionsModal({
                   <div className="txn-end">
                     <em className={txn.type}>{formatSignedMoney(txn.amount, txn.type, txn.currency)}</em>
                     <div className="txn-actions">
-                      <button className="icon-btn" title="Edit" onClick={() => { startEdit(txn); onClose(); }}>✏️</button>
-                      <button className="icon-btn danger" title="Delete" onClick={() => void deleteTransaction(txn)}>🗑</button>
+                      <button className="icon-btn tip" data-tip="Edit" aria-label="Edit record" onClick={() => { startEdit(txn); onClose(); }}>✏️</button>
+                      <button className="icon-btn tip danger" data-tip="Delete record" aria-label="Delete record" onClick={() => void deleteTransaction(txn)}>🗑</button>
                     </div>
                   </div>
                 </article>
@@ -681,8 +681,8 @@ function TransView() {
                       <div className="txn-end">
                         <em className={txn.type}>{formatSignedMoney(txn.amount, txn.type, txn.currency)}</em>
                         <div className="txn-actions">
-                          <button className="icon-btn" title="Edit" onClick={() => startEdit(txn)}>✏️</button>
-                          <button className="icon-btn danger" title="Delete" onClick={() => void deleteTransaction(txn)}>🗑</button>
+                          <button className="icon-btn tip" data-tip="Edit" aria-label="Edit record" onClick={() => startEdit(txn)}>✏️</button>
+                          <button className="icon-btn tip danger" data-tip="Delete record" aria-label="Delete record" onClick={() => void deleteTransaction(txn)}>🗑</button>
                         </div>
                       </div>
                     </article>
@@ -813,11 +813,13 @@ function RingChart({
 function CategoryGrid({
   data,
   activeCategory,
-  onSelect
+  onSelect,
+  onViewDetails
 }: {
   data: ColoredRow[];
   activeCategory: string | null;
   onSelect: (category: string) => void;
+  onViewDetails: (category: string) => void;
 }) {
   return (
     <div className="cat-grid">
@@ -826,27 +828,47 @@ function CategoryGrid({
         const isActive = activeCategory === row.category;
         const dimmed = activeCategory !== null && !isActive;
         return (
-          <button
-            type="button"
+          <div
+            role="button"
+            tabIndex={0}
             className={`cat-tile ${isActive ? 'active' : ''} ${dimmed ? 'off' : ''}`}
             key={row.category}
             onClick={() => onSelect(row.category)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onSelect(row.category);
+              }
+            }}
             aria-pressed={isActive}
             title={isActive ? 'Clear highlight' : 'Highlight in chart'}
-            style={isActive ? ({ '--tile-accent': row.color } as React.CSSProperties) : undefined}
+            style={{ '--tile-accent': row.color } as React.CSSProperties}
           >
             <span className="cat-rail" style={{ backgroundColor: row.color }} />
-            <div className="cat-tile-top">
-              <div>
+            <div className="cat-tile-head">
+              <span className="cat-chip" style={{ backgroundColor: `${meta.color}22`, color: meta.color }}>
+                {meta.emoji}
+              </span>
+              <div className="cat-tile-info">
                 <strong>{formatMoney(row.amount)}</strong>
                 <span>{row.category}</span>
               </div>
               <span className="cat-pct">{row.percent.toFixed(0)}%</span>
             </div>
-            <span className="cat-chip" style={{ backgroundColor: `${meta.color}22`, color: meta.color }}>
-              {meta.emoji}
-            </span>
-          </button>
+            <div className="cat-tile-bar">
+              <span style={{ width: `${Math.min(row.percent, 100)}%`, backgroundColor: row.color }} />
+            </div>
+            <button
+              type="button"
+              className="cat-tile-link"
+              onClick={(e) => {
+                e.stopPropagation();
+                onViewDetails(row.category);
+              }}
+            >
+              View details
+            </button>
+          </div>
         );
       })}
     </div>
@@ -979,7 +1001,7 @@ function niceCeil(value: number) {
 }
 
 function StatsBreakdown({ type }: { type: TransactionType }) {
-  const { transactions, selectedMonth } = useLedger();
+  const { transactions, selectedMonth, focusCategory } = useLedger();
   const [active, setActive] = useState<string | null>(null);
   const month = monthKey(selectedMonth);
   const breakdown = summarizeByCategory(transactions, month, type);
@@ -996,7 +1018,7 @@ function StatsBreakdown({ type }: { type: TransactionType }) {
   const select = (category: string) => setActive((current) => (current === category ? null : category));
 
   return (
-    <>
+    <div className="breakdown-layout">
       <div className="ring-hero">
         <RingChart
           data={tiles}
@@ -1006,11 +1028,18 @@ function StatsBreakdown({ type }: { type: TransactionType }) {
           onSelect={select}
         />
       </div>
-      <h4 className="section-title">
-        {type === 'expense' ? 'Spending' : 'Income'} categories <span className="muted">· tap to highlight</span>
-      </h4>
-      <CategoryGrid data={tiles} activeCategory={activeCategory} onSelect={select} />
-    </>
+      <div className="breakdown-cats">
+        <h4 className="section-title">
+          {type === 'expense' ? 'Spending' : 'Income'} categories <span className="muted">· tap to highlight</span>
+        </h4>
+        <CategoryGrid
+          data={tiles}
+          activeCategory={activeCategory}
+          onSelect={select}
+          onViewDetails={focusCategory}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -1042,7 +1071,7 @@ function StatsTrends({ type }: { type: TransactionType }) {
   const focusNote = selected.size > 0 ? ` · showing ${selected.size} selected` : ' · tap a category to isolate';
 
   return (
-    <>
+    <div className="trends-layout">
       <div className="segmented small">
         {TREND_RANGES.map((range) => (
           <button
@@ -1098,7 +1127,7 @@ function StatsTrends({ type }: { type: TransactionType }) {
           </ul>
         </>
       )}
-    </>
+    </div>
   );
 }
 
@@ -1304,9 +1333,21 @@ function CategoryEditPanel({ category, onClose }: { category: Category; onClose:
 }
 
 function CategoriesView() {
-  const { transactions, categories, selectedMonth, startEdit, deleteTransaction } = useLedger();
+  const { transactions, categories, selectedMonth, startEdit, deleteTransaction, categoryFocus, clearCategoryFocus } =
+    useLedger();
   const [selected, setSelected] = useState<string>(ALL_CATEGORIES);
   const [editing, setEditing] = useState(false);
+
+  // Honor a "View details" jump from the Stats view, then consume it so manual
+  // category changes here are not overridden.
+  useEffect(() => {
+    if (categoryFocus) {
+      setSelected(categoryFocus);
+      setEditing(false);
+      clearCategoryFocus();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [categoryFocus, clearCategoryFocus]);
 
   const month = monthKey(selectedMonth);
   const expenseCats = categories.filter((c) => c.type === 'expense');
@@ -1403,8 +1444,8 @@ function CategoriesView() {
                     <div className="txn-end">
                       <em className={txn.type}>{formatSignedMoney(txn.amount, txn.type, txn.currency)}</em>
                       <div className="txn-actions">
-                        <button className="icon-btn" title="Edit" onClick={() => startEdit(txn)}>✏️</button>
-                        <button className="icon-btn danger" title="Delete" onClick={() => void deleteTransaction(txn)}>🗑</button>
+                        <button className="icon-btn tip" data-tip="Edit" aria-label="Edit record" onClick={() => startEdit(txn)}>✏️</button>
+                        <button className="icon-btn tip danger" data-tip="Delete record" aria-label="Delete record" onClick={() => void deleteTransaction(txn)}>🗑</button>
                       </div>
                     </div>
                   </article>
@@ -1486,9 +1527,13 @@ function AccountStatCard({ account, balance }: { account: Account; balance: Acco
 
 function AccountsView() {
   const { accounts, transactions, carryForward, selectedMonth } = useLedger();
+  const [query, setQuery] = useState('');
   const month = monthKey(selectedMonth);
   const balances = computeAccountBalances(accounts, transactions, { carryForward, month });
   const total = balances.reduce((sum, a) => sum + a.balance, 0);
+
+  const term = query.trim().toLowerCase();
+  const filtered = term ? balances.filter((b) => b.name.toLowerCase().includes(term)) : balances;
 
   return (
     <div className="stack">
@@ -1496,11 +1541,29 @@ function AccountsView() {
         <span>{carryForward ? 'Total balance (running)' : `Total balance · ${monthTitle(selectedMonth.getFullYear(), selectedMonth.getMonth())}`}</span>
         <strong className="balance">{formatMoney(total)}</strong>
       </div>
+      {balances.length > 0 ? (
+        <div className="search-field">
+          <span className="search-ico" aria-hidden="true">🔍</span>
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search accounts…"
+            aria-label="Search accounts"
+          />
+          {query ? (
+            <button type="button" className="search-clear" aria-label="Clear search" onClick={() => setQuery('')}>×</button>
+          ) : null}
+        </div>
+      ) : null}
       <div className="account-grid">
         {balances.length === 0 ? (
-          <div className="empty"><span className="emoji">🏦</span><span className="muted">No accounts yet.</span></div>
+          <div className="empty" style={{ gridColumn: '1 / -1' }}><span className="emoji">🏦</span><span className="muted">No accounts yet.</span></div>
         ) : null}
-        {balances.map((balance) => {
+        {balances.length > 0 && filtered.length === 0 ? (
+          <div className="empty" style={{ gridColumn: '1 / -1' }}><span className="emoji">🔍</span><span className="muted">No accounts match “{query}”.</span></div>
+        ) : null}
+        {filtered.map((balance) => {
           const account = accounts.find((a) => a.name === balance.name) ?? {
             name: balance.name,
             currency: balance.currency,
@@ -1558,7 +1621,9 @@ function MoreView() {
         })}
       </div>
 
-      <div className="panel">
+      {/* Web keeps Export / Import / Erase in the left sidebar, so this panel is
+          only shown on mobile where the sidebar is replaced by the tab bar. */}
+      <div className="panel mobile-only">
         <h3>Backup &amp; restore</h3>
         <p className="muted" style={{ margin: '0 0 14px', fontSize: '0.86rem', lineHeight: 1.5 }}>
           Your data lives only on this device. Export an Excel workbook to back it up, or import a CSV or Excel
@@ -1578,6 +1643,43 @@ function MoreView() {
           </button>
         </div>
       </div>
+
+      <FeedbackPanel />
+    </div>
+  );
+}
+
+const DEV_EMAIL = 'dushyant.sharma1997@gmail.com';
+
+function FeedbackPanel() {
+  const [copied, setCopied] = useState(false);
+  const mailto = `mailto:${DEV_EMAIL}?subject=${encodeURIComponent('Money Sheets — Feedback')}&body=${encodeURIComponent(
+    'Hi Dushyant,\n\nHere is my feedback about Money Sheets:\n\n'
+  )}`;
+
+  async function copyEmail() {
+    try {
+      await navigator.clipboard.writeText(DEV_EMAIL);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <div className="panel feedback-panel">
+      <div className="panel-head"><h3>Feedback &amp; contact</h3></div>
+      <p className="muted" style={{ margin: '0 0 14px', fontSize: '0.86rem', lineHeight: 1.5 }}>
+        Found a bug or have an idea? I&rsquo;d love to hear it. Send me an email and I&rsquo;ll get back to you.
+      </p>
+      <div className="feedback-actions">
+        <a className="primary feedback-btn" href={mailto}>✉️ Contact developer</a>
+        <button type="button" className="ghost" onClick={() => void copyEmail()}>
+          {copied ? '✓ Copied' : 'Copy email'}
+        </button>
+      </div>
+      <p className="muted" style={{ margin: '12px 0 0', fontSize: '0.8rem' }}>{DEV_EMAIL}</p>
     </div>
   );
 }

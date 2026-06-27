@@ -59,3 +59,11 @@ export const SYNC_STATUS_LABEL: Record<SyncStatus, string> = {
   synced: 'Synced with Turso',
   not_synced: 'Not synced with Turso'
 };
+
+/** Shorter labels for the compact pill in the mobile top bar. */
+export const SYNC_STATUS_SHORT: Record<SyncStatus, string> = {
+  local: 'Local',
+  offline: 'Offline',
+  synced: 'Synced',
+  not_synced: 'Not synced'
+};

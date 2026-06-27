@@ -739,6 +739,30 @@ textarea { min-height: 76px; resize: vertical; }
 .icon-btn:hover { color: var(--text); }
 .icon-btn.danger:hover { color: var(--danger); background: rgba(255, 93, 108, 0.12); }
 
+/* Hover tooltip for row actions (Edit / Delete record). */
+.icon-btn.tip { position: relative; }
+.icon-btn.tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 7px);
+  left: 50%;
+  transform: translateX(-50%) translateY(3px);
+  padding: 4px 8px;
+  border-radius: 7px;
+  background: var(--text);
+  color: var(--surface);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.6);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  z-index: 40;
+}
+.icon-btn.tip:hover::after { opacity: 1; transform: translateX(-50%) translateY(0); }
+
 /* Compact transaction list (Categories view) — denser rows so the list
    doesn't dominate the page. */
 .list-panel.compact { padding: 12px; }
@@ -783,6 +807,10 @@ textarea { min-height: 76px; resize: vertical; }
 
 /* ---------- Stats ---------- */
 .stats-panel { max-width: 640px; margin: 0 auto; width: 100%; }
+/* On web the breakdown shows two columns, so the panel needs more room. */
+@media (min-width: 900px) {
+  .stats-panel { max-width: 1040px; }
+}
 .stats-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -899,11 +927,13 @@ textarea { min-height: 76px; resize: vertical; }
   background: var(--surface-2);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-lg);
-  padding: 14px 14px 16px 18px;
+  padding: 14px 16px 14px 20px;
   display: grid;
-  gap: 14px;
+  gap: 12px;
+  align-content: start;
   text-align: left;
   width: 100%;
+  cursor: pointer;
   overflow: hidden;
   transition: transform 0.1s, border-color 0.15s, opacity 0.15s;
 }
@@ -922,17 +952,72 @@ textarea { min-height: 76px; resize: vertical; }
   width: 5px;
   border-radius: 0 4px 4px 0;
 }
-.cat-tile-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
-.cat-tile-top strong { display: block; font-size: 1.02rem; letter-spacing: -0.02em; }
-.cat-tile-top span { color: var(--text-muted); font-size: 0.78rem; }
-.cat-pct { color: var(--text-dim); font-size: 0.78rem; font-weight: 700; }
+.cat-tile-head { display: flex; align-items: center; gap: 12px; }
+.cat-tile-info { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.cat-tile-info strong { display: block; font-size: 1.1rem; letter-spacing: -0.02em; }
+.cat-tile-info span {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cat-pct {
+  flex-shrink: 0;
+  align-self: flex-start;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+}
 .cat-chip {
-  width: 38px;
-  height: 38px;
-  border-radius: 11px;
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
   display: grid;
   place-items: center;
-  font-size: 1.15rem;
+  font-size: 1.2rem;
+}
+.cat-tile-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+.cat-tile-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* "View details" jumps to the Categories tab for this category + current month. */
+.cat-tile-link {
+  justify-self: start;
+  padding: 7px 16px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.14s, color 0.14s, transform 0.1s;
+}
+.cat-tile-link:hover { background: var(--accent); color: #fff; transform: translateY(-1px); }
+
+/* Stats breakdown: stacked on mobile, ring-left / categories-right on web. */
+.breakdown-layout { display: grid; gap: 8px; }
+@media (min-width: 900px) {
+  .breakdown-layout {
+    grid-template-columns: minmax(240px, 320px) 1fr;
+    align-items: center;
+    gap: 32px;
+  }
+  .breakdown-layout .ring-hero { padding: 0; }
+  .breakdown-cats .section-title { margin-top: 0; }
 }
 
 /* ---------- Categories view ---------- */
@@ -1066,6 +1151,9 @@ textarea { min-height: 76px; resize: vertical; }
 .account-card.editing { background: var(--surface-2); }
 
 /* ---------- Stats: trends ---------- */
+/* Keep the trends content from stretching to the full (wide) stats panel,
+   which scaled the SVG text/strokes up far too large on desktop. */
+.trends-layout { max-width: 600px; margin: 0 auto; }
 .trend-sub { text-align: center; font-size: 0.82rem; margin: 10px 0 2px; }
 .trend-chart { padding: 10px 0 4px; }
 .line-chart { width: 100%; height: auto; display: block; }
@@ -1097,6 +1185,35 @@ textarea { min-height: 76px; resize: vertical; }
 /* Budget progress bars */
 .bar-track { height: 9px; background: var(--bg-elevated); border-radius: 999px; overflow: hidden; }
 .bar-fill { height: 100%; border-radius: 999px; transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
+
+/* ---------- Search field ---------- */
+.search-field { position: relative; display: flex; align-items: center; }
+.search-field .search-ico {
+  position: absolute;
+  left: 14px;
+  font-size: 0.9rem;
+  opacity: 0.7;
+  pointer-events: none;
+}
+.search-field input {
+  width: 100%;
+  padding: 11px 38px 11px 38px;
+  border-radius: 999px;
+}
+.search-field .search-clear {
+  position: absolute;
+  right: 10px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--text-muted);
+  background: var(--surface-hover);
+}
+.search-field .search-clear:hover { color: var(--text); }
 
 /* ---------- Accounts ---------- */
 .account-grid {
@@ -1847,7 +1964,28 @@ textarea { min-height: 76px; resize: vertical; }
 .modal label { color: var(--text-dim); font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
 .field-group { display: grid; gap: 7px; }
 
+/* ---------- Feedback / contact ---------- */
+.feedback-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.feedback-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+/* ---------- Visibility helpers ---------- */
+/* Shown only on the mobile layout (sidebar hidden, tab bar shown). */
+.mobile-only { display: none; }
+
 /* ---------- Responsive ---------- */
+
+/* Web layout (sidebar visible): the sync status lives in the sidebar, so the
+   compact copy in the top bar is redundant and hidden. */
+@media (min-width: 761px) {
+  .topbar-actions .sync-status-bar { display: none; }
+}
 
 /* Tablet / small laptop */
 @media (max-width: 1024px) {
@@ -1864,22 +2002,34 @@ textarea { min-height: 76px; resize: vertical; }
   .app-shell { grid-template-columns: 1fr; }
   .sidebar { display: none; }
 
-  /* Two-row header: title + status on top, month nav + actions below. */
-  .topbar { padding: 10px 12px; gap: 8px 10px; flex-wrap: wrap; }
+  /* Reveal panels that web hides because their actions live in the sidebar. */
+  .mobile-only { display: block; }
+
+  /* Header: title + status on row 1; month nav, sync, theme and add all share
+     a single compact row 2. */
+  .topbar { padding: 8px 12px; gap: 6px 8px; flex-wrap: wrap; align-items: center; }
   .topbar h1 { font-size: 1.04rem; }
   .topbar-lead { flex-basis: 100%; min-width: 0; }
   .topbar .status { font-size: 0.72rem; }
   .topbar-lead .status .status-text { -webkit-line-clamp: 2; }
 
-  /* Month nav sits on the second row and can grow to fill leftover space. */
-  .topbar .month-nav { padding: 3px; gap: 0; flex: 1; justify-content: space-between; }
-  .topbar .month-nav strong { min-width: 0; flex: 1; text-align: center; font-size: 0.82rem; }
-  .topbar .month-nav .nav-btn { width: 28px; height: 28px; font-size: 0.95rem; }
-  .topbar-actions { gap: 8px; }
+  /* Slightly smaller month toggle to free room for the sync status text. */
+  .topbar .month-nav { order: 2; flex: 0 1 auto; min-width: 0; padding: 2px; gap: 0; justify-content: space-between; }
+  .topbar .month-nav strong { min-width: 0; text-align: center; font-size: 0.76rem; }
+  .topbar .month-nav .nav-btn { width: 24px; height: 24px; font-size: 0.88rem; }
+  .topbar-actions { order: 3; flex: 1 1 auto; justify-content: flex-end; gap: 6px; min-width: 0; }
+
+  /* Compact sync status: small dot + short status text (e.g. "Synced"). */
+  .topbar-actions .sync-status-bar.compact { padding: 5px 9px; max-width: none; }
+  .topbar-actions .sync-status-bar.compact .sync-status-label { display: inline; font-size: 0.68rem; }
+  .topbar-actions .sync-status-bar.compact .sync-now-btn { margin-left: 4px; padding: 2px 7px; font-size: 0.62rem; }
+
+  /* Smaller theme toggle so it fits the single-line header. */
+  .theme-toggle { transform: scale(0.86); transform-origin: center; }
 
   /* Compact, icon-only Add button */
-  .fab { padding: 0; width: 42px; height: 42px; border-radius: 50%; justify-content: center; gap: 0; }
-  .fab .plus { font-size: 1.55rem; }
+  .fab { padding: 0; width: 36px; height: 36px; border-radius: 50%; justify-content: center; gap: 0; }
+  .fab .plus { font-size: 1.35rem; }
   .fab-text { display: none; }
 
   .content { padding: 12px 12px calc(82px + env(safe-area-inset-bottom)); }
@@ -1893,8 +2043,18 @@ textarea { min-height: 76px; resize: vertical; }
   .summary-tile small { font-size: 0.62rem; }
 
   .action-cards { grid-template-columns: 1fr; }
-  .account-grid { grid-template-columns: 1fr; }
   .filter-grid { grid-template-columns: 1fr; }
+
+  /* Denser two-up account cards with a smaller badge (was oversized on phones). */
+  .account-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .account-card { padding: 12px; gap: 6px; }
+  .account-card .acct-top { gap: 8px; }
+  .account-card .acct-badge,
+  .acct-badge { width: 28px; height: 28px; border-radius: 8px; font-size: 0.78rem; }
+  .account-card h3 { font-size: 0.82rem; }
+  .account-card .acct-balance { font-size: 1.16rem; }
+  .account-card .acct-flows { gap: 8px; font-size: 0.68rem; }
+  .account-card .card-edit { width: 26px; height: 26px; }
   .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
   .kpi-card { padding: 13px 13px 12px; }
   .kpi-card strong { font-size: 1.24rem; }
@@ -1903,6 +2063,25 @@ textarea { min-height: 76px; resize: vertical; }
   .cat-toolbar { width: 100%; }
   .cat-dd { flex: 1; }
   .stats-panel { padding: 14px; }
+  /* Push the donut down a little so the top % labels clear the Income/Expenses tabs. */
+  .ring-hero { padding-top: 30px; }
+
+  /* Compact category tiles so the amount, name and % badge don't spill in the
+     two-up mobile grid. The % badge is pinned to the corner so it never gets
+     clipped competing for space in the header row. */
+  .cat-grid { gap: 10px; }
+  .cat-tile { padding: 12px 12px 12px 16px; gap: 9px; }
+  .cat-tile-head { gap: 9px; padding-right: 30px; }
+  .cat-chip { width: 32px; height: 32px; border-radius: 10px; font-size: 0.95rem; }
+  .cat-tile-info strong { font-size: 0.92rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cat-tile-info span { font-size: 0.7rem; }
+  .cat-pct { position: absolute; top: 10px; right: 10px; font-size: 0.64rem; padding: 1px 6px; }
+  .cat-tile-link { padding: 6px 12px; font-size: 0.72rem; }
+
+  /* Feedback actions stack full-width for a cleaner look on phones. */
+  .feedback-actions { flex-direction: column; align-items: stretch; }
+  .feedback-actions .feedback-btn,
+  .feedback-actions .ghost { width: 100%; }
 
   /* Overall compactness so phones need far less scrolling */
   .panel { padding: 13px; border-radius: var(--radius-lg); }
@@ -2003,10 +2182,20 @@ textarea { min-height: 76px; resize: vertical; }
   .panel { padding: 14px; }
 }
 
-/* Touch devices (any size): row actions can't rely on hover */
+/* Touch devices (any size): row actions can't rely on hover, so they are
+   always visible with larger, clearly-tappable buttons. */
 @media (hover: none) {
-  .txn-actions { opacity: 1; }
-  .icon-btn { width: 34px; height: 34px; font-size: 0.92rem; }
+  .txn-actions { opacity: 1; gap: 8px; }
+  .icon-btn {
+    width: 38px;
+    height: 38px;
+    font-size: 1rem;
+    background: var(--surface-2);
+    border: 1px solid var(--border-soft);
+  }
+  .icon-btn.danger { color: var(--danger); border-color: rgba(255, 93, 108, 0.28); background: rgba(255, 93, 108, 0.1); }
+  /* Hover tooltips never trigger on touch — avoid a stuck label. */
+  .icon-btn.tip::after { display: none; }
 }
 
 /* ---------- Crash / error boundary ---------- */

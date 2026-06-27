@@ -90,7 +90,7 @@ export type ConflictInfo = {
   remote: LedgerSnapshot;
 };
 
-export { SYNC_STATUS_LABEL, canShowSyncNow } from './storage/syncPolicy';
+export { SYNC_STATUS_LABEL, SYNC_STATUS_SHORT, canShowSyncNow } from './storage/syncPolicy';
 export type { SyncStatus } from './storage/syncPolicy';
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -138,12 +138,18 @@ type LedgerState = {
   form: TransactionFormInput;
   editingId: string | null;
   showAdd: boolean;
+  /** Category the user asked to inspect from the Stats view (one-shot). */
+  categoryFocus: string | null;
   setMainTab: (tab: MainTab) => void;
   setHomeView: (view: HomeView) => void;
   setSelectedMonth: (date: Date) => void;
   setFilters: (filters: TransactionFilters) => void;
   setForm: React.Dispatch<React.SetStateAction<TransactionFormInput>>;
   setShowAdd: (show: boolean) => void;
+  /** Jump to the Categories tab focused on a category (keeps the current month). */
+  focusCategory: (category: string) => void;
+  /** Consume the one-shot category focus after the Categories view applies it. */
+  clearCategoryFocus: () => void;
   exportPrompt: boolean;
   beginExport: () => void;
   cancelExport: () => void;
@@ -213,6 +219,16 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [exportPrompt, setExportPrompt] = useState(false);
+  const [categoryFocus, setCategoryFocus] = useState<string | null>(null);
+
+  function focusCategory(category: string) {
+    setCategoryFocus(category);
+    setMainTab('categories');
+  }
+
+  function clearCategoryFocus() {
+    setCategoryFocus(null);
+  }
 
   const currentMonth = monthKey(selectedMonth);
 
@@ -974,12 +990,15 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     form,
     editingId,
     showAdd,
+    categoryFocus,
     setMainTab,
     setHomeView,
     setSelectedMonth,
     setFilters,
     setForm,
     setShowAdd,
+    focusCategory,
+    clearCategoryFocus,
     exportPrompt,
     beginExport,
     cancelExport,

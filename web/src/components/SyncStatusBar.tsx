@@ -1,4 +1,4 @@
-import { useLedger, SYNC_STATUS_LABEL } from '../ledger';
+import { useLedger, SYNC_STATUS_LABEL, SYNC_STATUS_SHORT } from '../ledger';
 import { canShowSyncNow } from '../storage/syncPolicy';
 
 /**
@@ -20,7 +20,7 @@ export function SyncStatusBar({ compact = false }: { compact?: boolean }) {
     return (
       <div className="offline-pill sync-status-bar compact" title="Switch to Turso DB under More → Storage to sync to the cloud">
         <span className="offline-dot" />
-        <span className="sync-status-label">Local only</span>
+        <span className="sync-status-label">Local</span>
       </div>
     );
   }
@@ -30,9 +30,9 @@ export function SyncStatusBar({ compact = false }: { compact?: boolean }) {
   const showSync = canShowSyncNow(effectiveStorage, syncStatus);
 
   return (
-    <div className={`offline-pill sync-status-bar ${tone} ${compact ? 'compact' : ''}`}>
+    <div className={`offline-pill sync-status-bar ${tone} ${compact ? 'compact' : ''}`} title={label}>
       <span className="offline-dot" />
-      <span className="sync-status-label">{label}</span>
+      <span className="sync-status-label">{compact ? SYNC_STATUS_SHORT[syncStatus] : label}</span>
       {showSync ? (
         <button
           type="button"
