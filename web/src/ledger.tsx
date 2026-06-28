@@ -12,7 +12,8 @@ import {
   summarizeByCategory,
   summarizeMonth,
   summarizeWeek,
-  transactionsInMonth
+  transactionsInMonth,
+  dateKey
 } from '../../shared/finance';
 import type { TrendGranularity } from '../../shared/finance';
 import {
@@ -112,7 +113,7 @@ export type ConflictInfo = {
 export { SYNC_STATUS_LABEL, SYNC_STATUS_SHORT, canShowSyncNow } from './storage/syncPolicy';
 export type { SyncStatus } from './storage/syncPolicy';
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => dateKey();
 
 const emptyForm = (): TransactionFormInput => ({
   date: today(),

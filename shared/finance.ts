@@ -146,6 +146,15 @@ export function monthKey(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 }
 
+/**
+ * Local-time `YYYY-MM-DD` key. Unlike `toISOString().slice(0, 10)`, this never
+ * shifts the calendar day for timezones offset from UTC (e.g. IST is UTC+5:30,
+ * where local midnight maps to the previous day in UTC).
+ */
+export function dateKey(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 export function summarizePeriod(transactions: Transaction[], month = monthKey()): PeriodSummary {
   const rows = activeTransactions(transactions).filter((transaction) => transaction.date.startsWith(month));
   const income = rows
@@ -179,8 +188,8 @@ export function summarizeWeek(transactions: Transaction[], referenceDate = new D
   end.setDate(end.getDate() + 6);
   end.setHours(23, 59, 59, 999);
 
-  const startKey = start.toISOString().slice(0, 10);
-  const endKey = end.toISOString().slice(0, 10);
+  const startKey = dateKey(start);
+  const endKey = dateKey(end);
 
   const rows = activeTransactions(transactions).filter(
     (transaction) => transaction.date >= startKey && transaction.date <= endKey
@@ -312,7 +321,7 @@ export function buildCalendarMonth(
   for (let index = 0; index < 42; index += 1) {
     const current = new Date(gridStart);
     current.setDate(gridStart.getDate() + index);
-    const date = current.toISOString().slice(0, 10);
+    const date = dateKey(current);
     const dayRows = activeTransactions(transactions).filter((transaction) => transaction.date === date);
     const income = dayRows
       .filter((transaction) => transaction.type === 'income')

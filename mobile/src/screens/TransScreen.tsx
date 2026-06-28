@@ -6,6 +6,7 @@ import {
   activeTransactions,
   buildCalendarMonth,
   carryOverBalance,
+  dateKey,
   filterTransactions,
   monthKey,
   summarizeByCategory,
@@ -71,7 +72,7 @@ export function TransScreen() {
     [transactions, selectedDay]
   );
 
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = dateKey();
 
   return (
     <ScrollView style={[styles.screen, { backgroundColor: c.bg }]} contentContainerStyle={styles.content}>

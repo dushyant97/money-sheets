@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { radius } from '../../../shared/theme';
-import { buildCalendarMonth } from '../../../shared/finance';
+import { buildCalendarMonth, dateKey } from '../../../shared/finance';
 import { monthTitle } from '../../../shared/uiHelpers';
 import { useTheme } from '../theme/ThemeProvider';
 
@@ -27,7 +27,7 @@ export function DatePicker({
   }, [visible, value]);
 
   const days = useMemo(() => buildCalendarMonth([], view.getFullYear(), view.getMonth()), [view]);
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = dateKey();
 
   function shift(delta: number) {
     setView(new Date(view.getFullYear(), view.getMonth() + delta, 1));

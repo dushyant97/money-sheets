@@ -1,5 +1,5 @@
 import type { Transaction } from './finance';
-import { activeTransactions } from './finance';
+import { activeTransactions, dateKey } from './finance';
 
 const CATEGORY_META: Record<string, { emoji: string; color: string }> = {
   // Default expense categories
@@ -140,10 +140,10 @@ export function formatSignedMoney(amount: number, type: 'income' | 'expense', cu
 
 function relativeDay(date: string): string | null {
   const today = new Date();
-  const todayKey = today.toISOString().slice(0, 10);
+  const todayKey = dateKey(today);
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayKey = yesterday.toISOString().slice(0, 10);
+  const yesterdayKey = dateKey(yesterday);
 
   if (date === todayKey) return 'Today';
   if (date === yesterdayKey) return 'Yesterday';

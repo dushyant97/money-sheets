@@ -26,6 +26,7 @@ import {
   type HomeView,
   type TrendGranularity
 } from './ledger';
+import { dateKey } from '../../shared/finance';
 import type { Account, AccountBalance, Category, Transaction, TransactionType } from '../../shared/finance';
 import { NAV as SHARED_NAV, TAB_TITLES } from '../../shared/nav';
 import type { StorageMode, StoragePreferences } from '../../shared/storage/types';
@@ -50,7 +51,7 @@ const HOME_VIEWS: Array<{ id: HomeView; label: string }> = [
 
 const SIDEBAR_COLLAPSED_KEY = 'money-sheets-sidebar-collapsed';
 
-const todayKey = () => new Date().toISOString().slice(0, 10);
+const todayKey = () => dateKey();
 
 const EMOJI_CHOICES = [
   '🛒', '🍜', '🍔', '☕', '⛽', '🚌', '🚗', '✈️', '🏠', '🛠️', '👕', '🎁',

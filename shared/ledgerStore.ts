@@ -1,4 +1,5 @@
 import type { Account, Budget, Category, Transaction, TransactionFormInput, TransactionType } from './finance';
+import { dateKey } from './finance';
 
 export const LEDGER_STORAGE_VERSION = 2;
 export const LOCAL_STORAGE_KEY = 'money-sheets-ledger-v1';
@@ -71,7 +72,7 @@ export function newTransactionFromForm(
 
   return {
     id,
-    date: form.date || now.toISOString().slice(0, 10),
+    date: form.date || dateKey(now),
     type: form.type,
     amount,
     currency: form.currency.trim() || 'INR',

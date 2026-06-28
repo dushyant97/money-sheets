@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import type { Account, Budget, Category, Transaction, TransactionFormInput, TransactionType } from '../../../shared/finance';
-import { TransactionFilters, monthKey } from '../../../shared/finance';
+import { TransactionFilters, monthKey, dateKey } from '../../../shared/finance';
 import {
   LedgerSnapshot,
   type AccountPatch,
@@ -58,7 +58,7 @@ export type ReconnectInfo = {
   remoteUpdatedAt: string;
 };
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => dateKey();
 
 export const emptyForm = (): TransactionFormInput => ({
   date: today(),
