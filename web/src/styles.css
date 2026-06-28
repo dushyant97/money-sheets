@@ -308,6 +308,54 @@ a { color: inherit; text-decoration: none; }
 }
 .side-link.danger:hover { background: rgba(255, 93, 108, 0.12); color: var(--danger); }
 
+/* ---------- Collapsible sidebar (web only) ---------- */
+.app-shell { transition: grid-template-columns 0.2s ease; }
+
+.brand-text { display: block; min-width: 0; }
+
+/* Collapse/expand control pinned to the bottom of the sidebar. */
+.sidebar-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  font-weight: 600;
+  font-size: 0.86rem;
+  line-height: 1;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.sidebar-toggle:hover { background: var(--surface-hover); color: var(--text); border-color: var(--border); }
+.sidebar-toggle-ico {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  flex-shrink: 0;
+  font-size: 1.05rem;
+}
+
+@media (min-width: 761px) {
+  .app-shell.sidebar-collapsed { grid-template-columns: 76px 1fr; }
+}
+
+.sidebar.collapsed { padding-left: 12px; padding-right: 12px; }
+.sidebar.collapsed .brand { flex-direction: column; gap: 10px; padding: 4px 0; }
+.sidebar.collapsed .brand-text { display: none; }
+.sidebar.collapsed .sidebar-toggle { justify-content: center; padding: 10px 0; gap: 0; }
+.sidebar.collapsed .nav-label { display: none; }
+.sidebar.collapsed .side-link-text { display: none; }
+.sidebar.collapsed .side-link { justify-content: center; gap: 0; padding: 11px 0; }
+.sidebar.collapsed .side-link .ico { width: auto; }
+/* Collapsed sync pill: show just the status dot, centered. */
+.sidebar.collapsed .offline-pill { justify-content: center; padding: 10px 0; font-size: 0; gap: 0; }
+.sidebar.collapsed .offline-pill .offline-dot { font-size: 0; }
+.sidebar.collapsed .sync-status-label,
+.sidebar.collapsed .sync-now-btn { display: none; }
+
 .offline-pill {
   display: flex;
   align-items: center;
@@ -1480,6 +1528,7 @@ textarea { min-height: 76px; resize: vertical; }
   margin: 0 -6px;
   padding: 0 6px;
 }
+.day-add-btn { width: 100%; display: inline-flex; align-items: center; justify-content: center; margin-top: 2px; }
 
 /* Showcase mode banner — sits at the very top of the page */
 .showcase-banner {
@@ -1511,6 +1560,13 @@ textarea { min-height: 76px; resize: vertical; }
   margin: 0 auto;
 }
 .confirm-icon.warn { background: rgba(255, 176, 32, 0.18); }
+.confirm-icon.danger { background: rgba(255, 93, 108, 0.18); }
+.primary.danger {
+  background: var(--danger);
+  color: #fff;
+  box-shadow: 0 12px 28px -14px rgba(255, 93, 108, 0.8);
+}
+.primary.danger:hover { filter: brightness(1.05); }
 .confirm-actions {
   display: flex;
   gap: 10px;
@@ -1964,6 +2020,35 @@ textarea { min-height: 76px; resize: vertical; }
 .modal label { color: var(--text-dim); font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
 .field-group { display: grid; gap: 7px; }
 
+/* ---------- PWA install / update banners ---------- */
+.pwa-banner {
+  position: fixed;
+  left: 50%;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 45;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+  width: min(520px, calc(100vw - 24px));
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: 0 16px 40px -18px rgba(0, 0, 0, 0.55);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+.pwa-banner-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.pwa-banner.ios { flex-direction: column; align-items: stretch; text-align: left; }
+.pwa-banner.ios .ghost { align-self: flex-end; }
+
+@media (max-width: 760px) {
+  .pwa-banner { bottom: calc(78px + env(safe-area-inset-bottom)); }
+}
+
 /* ---------- Feedback / contact ---------- */
 .feedback-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .feedback-btn {
@@ -2078,10 +2163,16 @@ textarea { min-height: 76px; resize: vertical; }
   .cat-pct { position: absolute; top: 10px; right: 10px; font-size: 0.64rem; padding: 1px 6px; }
   .cat-tile-link { padding: 6px 12px; font-size: 0.72rem; }
 
-  /* Feedback actions stack full-width for a cleaner look on phones. */
-  .feedback-actions { flex-direction: column; align-items: stretch; }
+  /* Keep both feedback actions on a single line on phones. */
+  .feedback-actions { flex-wrap: nowrap; }
   .feedback-actions .feedback-btn,
-  .feedback-actions .ghost { width: 100%; }
+  .feedback-actions .ghost {
+    flex: 1 1 0;
+    min-width: 0;
+    padding-left: 10px;
+    padding-right: 10px;
+    font-size: 0.82rem;
+  }
 
   /* Overall compactness so phones need far less scrolling */
   .panel { padding: 13px; border-radius: var(--radius-lg); }
@@ -2162,10 +2253,13 @@ textarea { min-height: 76px; resize: vertical; }
 /* Small phones */
 @media (max-width: 480px) {
   .topbar h1 { font-size: 1.06rem; }
-  .summary-strip { grid-template-columns: 1fr; }
-  .summary-tile { padding: 14px 16px; }
-  .summary-tile strong { font-size: 1.3rem; }
-  .summary-tile span { font-size: 0.68rem; }
+  /* Keep Income / Expense / Balance on a single row even on small phones. */
+  .summary-strip { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .summary-tile { padding: 9px 9px 9px 11px; gap: 3px; }
+  .summary-tile strong { font-size: 0.9rem; }
+  .summary-tile .tile-top span:first-child,
+  .summary-tile span { font-size: 0.56rem; }
+  .summary-tile small { font-size: 0.54rem; }
 
   .view-bar { gap: 10px; }
   .pill { padding: 6px 11px; font-size: 0.76rem; }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { PwaShell } from './components/PwaShell';
 import {
   LedgerProvider,
   useLedger,
@@ -41,10 +42,10 @@ const TITLES: Record<string, string> = TAB_TITLES;
 
 const HOME_VIEWS: Array<{ id: HomeView; label: string }> = [
   { id: 'calendar', label: 'Calendar' },
-  { id: 'weekly', label: 'Weekly' },
-  { id: 'monthly', label: 'Monthly' },
   { id: 'summary', label: 'Summary' }
 ];
+
+const SIDEBAR_COLLAPSED_KEY = 'money-sheets-sidebar-collapsed';
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
 
@@ -69,6 +70,22 @@ export default function App() {
 
 function AppShell() {
   const ledger = useLedger();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(
+    () => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1'
+  );
+
+  // Reset scroll to the top of the page whenever the user switches sections.
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [ledger.mainTab]);
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? '1' : '0');
+      return next;
+    });
+  };
 
   if (ledger.loadPhase === 'loading') {
     return (
@@ -98,8 +115,8 @@ function AppShell() {
   }
 
   return (
-    <div className="app-shell">
-      <Sidebar />
+    <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+      <Sidebar collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
 
       <div className="main">
         {ledger.showcaseMode ? (
@@ -172,6 +189,8 @@ function AppShell() {
           onChoose={(choice) => void ledger.resolveConflict(choice)}
         />
       ) : null}
+      <ConfirmDialog />
+      <PwaShell />
     </div>
   );
 }
@@ -264,14 +283,14 @@ function ThemeToggle() {
   );
 }
 
-function Sidebar() {
+function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const ledger = useLedger();
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
       <div className="brand">
         <span className="brand-mark">₹</span>
-        <div>
+        <div className="brand-text">
           <strong>Money Sheets</strong>
           <span>Personal finance</span>
         </div>
@@ -286,9 +305,10 @@ function Sidebar() {
               className={ledger.mainTab === item.id ? 'side-link active' : 'side-link'}
               onClick={() => ledger.setMainTab(item.id)}
               style={{ ['--ico-tint' as string]: item.tint }}
+              title={collapsed ? item.label : undefined}
             >
               <span className="nav-ico">{item.icon}</span>
-              {item.label}
+              <span className="side-link-text">{item.label}</span>
             </button>
           ))}
         </nav>
@@ -297,25 +317,37 @@ function Sidebar() {
       <div className="sidebar-section sidebar-spacer">
         <span className="nav-label">Data</span>
         <div className="sidebar-actions">
-          <button className="side-link" onClick={() => void ledger.refresh()}>
-            <span className="ico">↻</span> Refresh
+          <button className="side-link" onClick={() => void ledger.refresh()} title={collapsed ? 'Refresh' : undefined}>
+            <span className="ico">↻</span> <span className="side-link-text">Refresh</span>
           </button>
-          <button className="side-link" onClick={() => ledger.beginExport()}>
-            <span className="ico">⬇</span> Export Excel
+          <button className="side-link" onClick={() => ledger.beginExport()} title={collapsed ? 'Export Excel' : undefined}>
+            <span className="ico">⬇</span> <span className="side-link-text">Export Excel</span>
           </button>
-          <ImportButton />
-          <button className="side-link danger" onClick={() => void ledger.resetAllData()}>
-            <span className="ico">🗑</span> Erase all data
+          <ImportButton collapsed={collapsed} />
+          <button className="side-link danger" onClick={() => void ledger.resetAllData()} title={collapsed ? 'Erase all data' : undefined}>
+            <span className="ico">🗑</span> <span className="side-link-text">Erase all data</span>
           </button>
         </div>
       </div>
 
       <SyncStatusBar />
+
+      <button
+        type="button"
+        className="sidebar-toggle"
+        onClick={onToggle}
+        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        aria-expanded={!collapsed}
+        title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      >
+        <span className="sidebar-toggle-ico">{collapsed ? '»' : '«'}</span>
+        <span className="side-link-text">Collapse</span>
+      </button>
     </aside>
   );
 }
 
-function ImportButton({ asCard = false }: { asCard?: boolean }) {
+function ImportButton({ asCard = false, collapsed = false }: { asCard?: boolean; collapsed?: boolean }) {
   const { importData } = useLedger();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -339,8 +371,12 @@ function ImportButton({ asCard = false }: { asCard?: boolean }) {
           <span>Replace all data with a CSV or Excel backup (you'll confirm first).</span>
         </button>
       ) : (
-        <button className="side-link" onClick={() => inputRef.current?.click()}>
-          <span className="ico">⬆</span> Import CSV / Excel
+        <button
+          className="side-link"
+          onClick={() => inputRef.current?.click()}
+          title={collapsed ? 'Import CSV / Excel' : undefined}
+        >
+          <span className="ico">⬆</span> <span className="side-link-text">Import CSV / Excel</span>
         </button>
       )}
     </>
@@ -442,11 +478,17 @@ function DayTransactionsModal({
   startEdit: (t: Transaction) => void;
   deleteTransaction: (t: Transaction) => void;
 }) {
+  const { addTransactionOn } = useLedger();
   const rows = transactions.filter((t) => !t.deleted && t.date === date).sort((a, b) => b.amount - a.amount);
   const income = rows.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const expense = rows.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
   const parsed = new Date(`${date}T12:00:00`);
   const title = parsed.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+  const addOnThisDay = () => {
+    addTransactionOn(date);
+    onClose();
+  };
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -486,6 +528,9 @@ function DayTransactionsModal({
             })}
           </div>
         )}
+        <button type="button" className="primary day-add-btn" onClick={addOnThisDay}>
+          + Add transaction
+        </button>
       </div>
     </div>
   );
@@ -588,28 +633,6 @@ function TransView() {
                     {day.income > 0 ? <em className="income">+{day.income.toFixed(0)}</em> : null}
                   </button>
                 ))}
-              </div>
-            </>
-          ) : null}
-
-          {homeView === 'weekly' ? (
-            <>
-              <h3>This week</h3>
-              <div className="mini-stats">
-                <p><span className="muted">Income</span> <span className="income">{formatMoney(weekSummary.income)}</span></p>
-                <p><span className="muted">Expense</span> <span className="expense">{formatMoney(weekSummary.expense)}</span></p>
-                <p><span className="muted">Net</span> <span className="balance">{formatMoney(weekSummary.balance)}</span></p>
-              </div>
-            </>
-          ) : null}
-
-          {homeView === 'monthly' ? (
-            <>
-              <h3>This month</h3>
-              <div className="mini-stats">
-                <p><span className="muted">Income</span> <span className="income">{formatMoney(monthSummary.income)}</span></p>
-                <p><span className="muted">Expense</span> <span className="expense">{formatMoney(monthSummary.expense)}</span></p>
-                <p><span className="muted">Net</span> <span className="balance">{formatMoney(monthSummary.balance)}</span></p>
               </div>
             </>
           ) : null}
@@ -1679,24 +1702,32 @@ function FeedbackPanel() {
           {copied ? '✓ Copied' : 'Copy email'}
         </button>
       </div>
-      <p className="muted" style={{ margin: '12px 0 0', fontSize: '0.8rem' }}>{DEV_EMAIL}</p>
     </div>
   );
 }
 
-function ShowcaseConfirmModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
+function ConfirmDialog() {
+  const { confirmDialog, answerConfirm } = useLedger();
+  if (!confirmDialog) return null;
+
+  const tone = confirmDialog.tone ?? 'default';
   return (
-    <div className="modal-backdrop" onClick={onCancel}>
+    <div className="modal-backdrop" onClick={() => answerConfirm(false)}>
       <div className="modal confirm-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="confirm-icon warn">⚠️</div>
-        <h3 style={{ margin: 0 }}>Enable Showcase Mode?</h3>
-        <p className="muted confirm-text">
-          All data currently set will be permanently lost. Export a backup first if you need to keep your real
-          records.
-        </p>
+        <div className={`confirm-icon ${tone === 'danger' ? 'danger' : 'warn'}`}>{confirmDialog.icon ?? '⚠️'}</div>
+        <h3 style={{ margin: 0 }}>{confirmDialog.title}</h3>
+        <p className="muted confirm-text">{confirmDialog.message}</p>
         <div className="confirm-actions">
-          <button className="ghost" onClick={onCancel}>Cancel</button>
-          <button className="primary" onClick={onConfirm}>Continue</button>
+          <button className="ghost" onClick={() => answerConfirm(false)}>
+            {confirmDialog.cancelLabel ?? 'Cancel'}
+          </button>
+          <button
+            className={tone === 'danger' ? 'primary danger' : 'primary'}
+            onClick={() => answerConfirm(true)}
+            autoFocus
+          >
+            {confirmDialog.confirmLabel ?? 'Confirm'}
+          </button>
         </div>
       </div>
     </div>
@@ -1956,7 +1987,6 @@ function StorageSettingsPanel() {
 
 function SettingsPanel() {
   const { carryForward, setCarryForward, showcaseMode, enableShowcaseMode, exitShowcaseMode, busy } = useLedger();
-  const [confirmShowcase, setConfirmShowcase] = useState(false);
 
   return (
     <div className="panel">
@@ -1986,7 +2016,9 @@ function SettingsPanel() {
           <strong>Showcase mode</strong>
           <span className="muted">
             Load randomly generated demo data for the last 6 months — useful for demos and screenshots.
-            {showcaseMode ? ' Currently active with sample records.' : ' Enabling replaces all data on this device.'}
+            {showcaseMode
+              ? ' Currently active with sample records. Your real data is preserved.'
+              : ' Runs in a sandbox — your real data stays safe and returns when you exit.'}
           </span>
         </div>
         {showcaseMode ? (
@@ -1994,18 +2026,11 @@ function SettingsPanel() {
             Exit showcase
           </button>
         ) : (
-          <button type="button" className="primary sm" disabled={busy} onClick={() => setConfirmShowcase(true)}>
+          <button type="button" className="primary sm" disabled={busy} onClick={() => void enableShowcaseMode()}>
             Enable showcase
           </button>
         )}
       </div>
-
-      {confirmShowcase ? (
-        <ShowcaseConfirmModal
-          onCancel={() => setConfirmShowcase(false)}
-          onConfirm={() => { setConfirmShowcase(false); void enableShowcaseMode(); }}
-        />
-      ) : null}
     </div>
   );
 }

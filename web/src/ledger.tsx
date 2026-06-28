@@ -48,7 +48,17 @@ import {
   updateTransactionInLedger,
   upsertBudgetInLedger
 } from '../../shared/ledgerStore';
-import { clearLocalLedger, loadLocalLedger, localLedgerExists, saveLocalLedger } from './storage/localAdapter';
+import {
+  clearLocalLedger,
+  loadLocalLedger,
+  localLedgerExists,
+  saveLocalLedger,
+  loadShowcaseLedger,
+  saveShowcaseLedger,
+  clearShowcaseLedger,
+  showcaseSessionActive,
+  setShowcaseSessionActive
+} from './storage/localAdapter';
 import {
   applyTursoChange,
   clearTursoLedger,
@@ -115,6 +125,17 @@ function applySnapshot(snapshot: LedgerSnapshot) {
   };
 }
 
+export type ConfirmTone = 'default' | 'danger';
+
+export type ConfirmRequest = {
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  tone?: ConfirmTone;
+  icon?: string;
+};
+
 type LedgerState = {
   transactions: Transaction[];
   accounts: Account[];
@@ -146,6 +167,8 @@ type LedgerState = {
   setFilters: (filters: TransactionFilters) => void;
   setForm: React.Dispatch<React.SetStateAction<TransactionFormInput>>;
   setShowAdd: (show: boolean) => void;
+  /** Open the create-transaction flow with a specific date pre-filled. */
+  addTransactionOn: (date: string) => void;
   /** Jump to the Categories tab focused on a category (keeps the current month). */
   focusCategory: (category: string) => void;
   /** Consume the one-shot category focus after the Categories view applies it. */
@@ -179,6 +202,10 @@ type LedgerState = {
   syncNow: () => Promise<void>;
   resolveConflict: (choice: 'local' | 'turso') => Promise<void>;
   importExcelToTurso: (file: File) => Promise<void>;
+  /** Active confirmation dialog request, or null when none is open. */
+  confirmDialog: ConfirmRequest | null;
+  /** Resolve the open confirmation dialog with the user's choice. */
+  answerConfirm: (result: boolean) => void;
 };
 
 const LedgerContext = createContext<LedgerState | null>(null);
@@ -201,6 +228,9 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   const [loadPhase, setLoadPhase] = useState<LoadPhase>('loading');
   const [message, setMessage] = useState('');
   const bootstrappedRef = useRef(false);
+  // When true, reads/writes are redirected to the isolated showcase key so the
+  // user's real ledger is never modified while demo data is on screen.
+  const showcaseActiveRef = useRef(showcaseSessionActive());
 
   const storagePrefsRef = useRef<StoragePreferences>(loadStoragePreferences());
   const [storagePrefs, setStoragePrefs] = useState<StoragePreferences>(() => storagePrefsRef.current);
@@ -220,6 +250,25 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   const [showAdd, setShowAdd] = useState(false);
   const [exportPrompt, setExportPrompt] = useState(false);
   const [categoryFocus, setCategoryFocus] = useState<string | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmRequest | null>(null);
+  const confirmResolveRef = useRef<((result: boolean) => void) | null>(null);
+
+  /** Open a custom confirmation dialog and resolve once the user responds. */
+  function requestConfirm(request: ConfirmRequest): Promise<boolean> {
+    // Resolve any dialog already waiting (shouldn't normally happen) as cancelled.
+    confirmResolveRef.current?.(false);
+    return new Promise<boolean>((resolve) => {
+      confirmResolveRef.current = resolve;
+      setConfirmDialog(request);
+    });
+  }
+
+  function answerConfirm(result: boolean) {
+    setConfirmDialog(null);
+    const resolve = confirmResolveRef.current;
+    confirmResolveRef.current = null;
+    resolve?.(result);
+  }
 
   function focusCategory(category: string) {
     setCategoryFocus(category);
@@ -248,6 +297,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   // Read from whichever store is effective now. When Turso is active we also
   // refresh the local cache so offline fallback shows recent data.
   async function loadActiveLedger(): Promise<LedgerSnapshot> {
+    if (showcaseActiveRef.current) return loadShowcaseLedger();
     const prefs = storagePrefsRef.current;
     const info = resolveEffectiveStorage(prefs);
     if (info.effectiveMode === 'turso') {
@@ -262,6 +312,13 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   // single-row write (no full-ledger rewrite); omit it for bulk replacements
   // (import/showcase) where the whole snapshot is rewritten.
   async function persist(next: LedgerSnapshot, change?: LedgerChange) {
+    // Showcase session: keep everything in the isolated demo key. The real
+    // ledger (local + Turso) is left untouched.
+    if (showcaseActiveRef.current) {
+      await saveShowcaseLedger(next);
+      syncFromSnapshot(next);
+      return;
+    }
     const prefs = storagePrefsRef.current;
     const info = resolveEffectiveStorage(prefs);
     if (info.effectiveMode === 'turso') {
@@ -276,6 +333,12 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 
   // Clear the effective store (and the local cache when Turso is active).
   async function clearActiveLedger(): Promise<LedgerSnapshot> {
+    // In a showcase session, "erase" only resets the demo copy.
+    if (showcaseActiveRef.current) {
+      const fresh = buildShowcaseLedger();
+      await saveShowcaseLedger(fresh);
+      return fresh;
+    }
     const prefs = storagePrefsRef.current;
     const info = resolveEffectiveStorage(prefs);
     if (info.effectiveMode === 'turso') {
@@ -374,6 +437,15 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 
     void (async () => {
       try {
+        // A showcase session was active on the last visit — restore the demo
+        // copy without reading the real local/Turso ledger.
+        if (showcaseActiveRef.current) {
+          const demo = await loadShowcaseLedger();
+          syncFromSnapshot(demo);
+          setLoadPhase('ready');
+          setMessage('Showcase mode is on — demo data. Your real data is preserved and untouched.');
+          return;
+        }
         const info = resolveEffectiveStorage(storagePrefsRef.current);
         setEffectiveStorage(info);
         if (info.effectiveMode === 'turso') {
@@ -524,7 +596,16 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   }
 
   async function deleteTransaction(transaction: Transaction) {
-    if (!snapshot || !window.confirm('Delete this transaction?')) return;
+    if (!snapshot) return;
+    const confirmed = await requestConfirm({
+      icon: '🗑️',
+      tone: 'danger',
+      title: 'Delete this transaction?',
+      message: 'This transaction will be removed from your ledger. This cannot be undone.',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel'
+    });
+    if (!confirmed) return;
     setBusy(true);
     try {
       const next = softDeleteInLedger(snapshot, transaction);
@@ -551,6 +632,12 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     });
     setShowAdd(true);
     setMainTab('trans');
+  }
+
+  function addTransactionOn(date: string) {
+    setEditingId(null);
+    setForm({ ...emptyForm(), date });
+    setShowAdd(true);
   }
 
   function cancelEdit() {
@@ -614,7 +701,16 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   }
 
   async function deleteAccount(name: string) {
-    if (!snapshot || !window.confirm(`Remove account "${name}"?\n\nExisting transactions keep their data, but this account will no longer be selectable.`)) return;
+    if (!snapshot) return;
+    const confirmed = await requestConfirm({
+      icon: '🏦',
+      tone: 'danger',
+      title: `Remove account "${name}"?`,
+      message: 'Existing transactions keep their data, but this account will no longer be selectable.',
+      confirmLabel: 'Remove account',
+      cancelLabel: 'Cancel'
+    });
+    if (!confirmed) return;
     setBusy(true);
     try {
       const next = removeAccountFromLedger(snapshot, name);
@@ -661,7 +757,16 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   }
 
   async function deleteCategory(name: string) {
-    if (!snapshot || !window.confirm(`Remove category "${name}"?\n\nExisting transactions keep their data, but this category will no longer be selectable.`)) return;
+    if (!snapshot) return;
+    const confirmed = await requestConfirm({
+      icon: '🗂️',
+      tone: 'danger',
+      title: `Remove category "${name}"?`,
+      message: 'Existing transactions keep their data, but this category will no longer be selectable.',
+      confirmLabel: 'Remove category',
+      cancelLabel: 'Cancel'
+    });
+    if (!confirmed) return;
     setBusy(true);
     try {
       const next = removeCategoryFromLedger(snapshot, name);
@@ -723,9 +828,16 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   async function importData(file: File) {
     if (!snapshot) return;
 
-    const confirmed = window.confirm(
-      `Import "${file.name}"?\n\nAll existing data on this device will be removed and replaced with transactions from the file. Budgets will also be reset.`
-    );
+    const confirmed = await requestConfirm({
+      icon: '⬆️',
+      tone: 'danger',
+      title: `Import "${file.name}"?`,
+      message:
+        'All existing data on this device will be removed and replaced with transactions from the file. ' +
+        'Budgets will also be reset. Export a backup first if you need it.',
+      confirmLabel: 'Import & replace',
+      cancelLabel: 'Cancel'
+    });
     if (!confirmed) return;
 
     setBusy(true);
@@ -753,16 +865,35 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   async function enableShowcaseMode() {
     if (!snapshot) return;
 
+    const confirmed = await requestConfirm({
+      icon: '🎬',
+      tone: 'default',
+      title: 'Enable Showcase Mode?',
+      message:
+        'Loads demo data into a separate sandbox so you can explore the app. ' +
+        'Your real records stay safe and are restored automatically when you exit showcase mode.',
+      confirmLabel: 'Enable showcase',
+      cancelLabel: 'Cancel'
+    });
+    if (!confirmed) return;
+
     setBusy(true);
     try {
       const demo = buildShowcaseLedger();
-      await persist(demo);
+      // Switch into the isolated showcase session before persisting so the demo
+      // data is written to its own key, never the real ledger.
+      showcaseActiveRef.current = true;
+      setShowcaseSessionActive(true);
+      await saveShowcaseLedger(demo);
+      syncFromSnapshot(demo);
       setForm(emptyForm());
       setEditingId(null);
       setShowAdd(false);
       setSelectedMonth(new Date());
-      setMessage(`Showcase mode on — ${demo.transactions.length} demo transactions loaded.`);
+      setMessage(`Showcase mode on — ${demo.transactions.length} demo transactions loaded. Your real data is safe.`);
     } catch (error) {
+      showcaseActiveRef.current = false;
+      setShowcaseSessionActive(false);
       setMessage(errorMessage(error));
     } finally {
       setBusy(false);
@@ -772,22 +903,32 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   async function exitShowcaseMode() {
     if (!snapshot) return;
 
-    const confirmed = window.confirm(
-      'Exit Showcase Mode?\n\n' +
-        'All demo data will be removed and the app will reset to an empty ledger.\n\n' +
-        'Export first if you want to keep anything.\n\n' +
-        'Continue?'
-    );
+    const confirmed = await requestConfirm({
+      icon: '↩️',
+      tone: 'default',
+      title: 'Exit Showcase Mode?',
+      message:
+        'The demo data will be discarded and your original ledger will be restored exactly as you left it. ' +
+        'Nothing you had before showcase mode is lost.',
+      confirmLabel: 'Exit showcase',
+      cancelLabel: 'Stay in showcase'
+    });
     if (!confirmed) return;
 
     setBusy(true);
     try {
-      const fresh = await clearActiveLedger();
-      syncFromSnapshot(fresh);
+      // Leave the showcase session, drop the demo copy, then reload the real
+      // ledger from the effective store (local or Turso).
+      showcaseActiveRef.current = false;
+      setShowcaseSessionActive(false);
+      clearShowcaseLedger();
+      const original = await loadActiveLedger();
+      syncFromSnapshot(original);
       setForm(emptyForm());
       setEditingId(null);
       setShowAdd(false);
-      setMessage('Showcase mode off. Ledger cleared.');
+      await refreshSyncStatus();
+      setMessage('Showcase mode off. Your original data is back.');
     } catch (error) {
       setMessage(errorMessage(error));
     } finally {
@@ -796,9 +937,16 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   }
 
   async function resetAllData() {
-    const confirmed = window.confirm(
-      'Erase all local data?\n\nThis removes transactions, budgets, and custom accounts/categories from this browser. Export a CSV first if you need a backup.'
-    );
+    const confirmed = await requestConfirm({
+      icon: '🗑️',
+      tone: 'danger',
+      title: 'Erase all data?',
+      message:
+        'This removes transactions, budgets, and custom accounts/categories from this browser. ' +
+        'Export an Excel backup first if you need it. This cannot be undone.',
+      confirmLabel: 'Erase everything',
+      cancelLabel: 'Cancel'
+    });
     if (!confirmed) return;
 
     setBusy(true);
@@ -944,10 +1092,16 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
       const imported = await readTransactionsFromFile(file, (fraction) => {
         setImportProgress(Math.min(0.9, fraction));
       });
-      const confirmed = window.confirm(
-        `Import ${imported.length} transactions from "${file.name}" and sync to Turso?\n\n` +
-          'This will replace all data in your Turso database and on this device.'
-      );
+      const confirmed = await requestConfirm({
+        icon: '☁️',
+        tone: 'danger',
+        title: 'Import and sync to Turso?',
+        message:
+          `Import ${imported.length} transactions from "${file.name}" and sync to Turso? ` +
+          'This will replace all data in your Turso database and on this device.',
+        confirmLabel: 'Import & sync',
+        cancelLabel: 'Cancel'
+      });
       if (!confirmed) return;
       const next = ledgerFromImportedTransactions(imported);
       await saveTursoLedger(prefs.turso, next);
@@ -997,6 +1151,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     setFilters,
     setForm,
     setShowAdd,
+    addTransactionOn,
     focusCategory,
     clearCategoryFocus,
     exportPrompt,
@@ -1024,7 +1179,9 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     applyStorageSettings,
     syncNow,
     resolveConflict,
-    importExcelToTurso
+    importExcelToTurso,
+    confirmDialog,
+    answerConfirm
   };
 
   return <LedgerContext.Provider value={value}>{children}</LedgerContext.Provider>;

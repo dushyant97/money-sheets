@@ -712,7 +712,7 @@ The app is shipped at **v2.0.0**. Both clients are production-configured:
 
 | Area | Status |
 | --- | --- |
-| Web | Vite production build, PWA manifest, SVG favicon, light/dark theme, render error boundary, optional Turso |
+| Web | Vite production build, **installable PWA** (service worker + manifest + offline app shell), light/dark theme, render error boundary, optional Turso |
 | Mobile | Expo SDK 56, branded icon/splash, app id `com.moneysheets.app`, `versionCode` 2, Android + iOS EAS profiles, optional Turso |
 | Repo | `.gitignore` present, versions at `2.0.0`, no developer backend/secrets |
 
@@ -732,6 +732,24 @@ env vars are required.
 - Deploying under a sub-path (e.g. GitHub Pages project site)? Build with a base path:
   `VITE_BASE=/money-sheets/ npm run build`.
 - Local production smoke test: `npm run preview`.
+
+#### Install as a PWA (web)
+
+The web app is a full Progressive Web App:
+
+- **Service worker** — precaches the app shell (HTML, JS, CSS) so the UI loads offline.
+- **Web manifest** — `display: standalone`, theme colors, 192/512 PNG icons (+ maskable).
+- **Install prompt** — Chrome/Edge/Android show an in-app **Install** banner when eligible; iOS shows **Share → Add to Home Screen** guidance.
+- **Updates** — new deployments auto-activate via `autoUpdate`; users see a **Reload** banner when a fresh version is ready.
+
+Requirements for the browser install prompt: **HTTPS**, a registered service worker, and a valid manifest (all included in `npm run build` output). Ledger data still lives in `localStorage` and is separate from the cached app shell.
+
+Regenerate install icons after changing `public/favicon.svg`:
+
+```bash
+cd web
+npm run pwa:icons
+```
 
 **Caveat:** each browser profile has its own `localStorage`. Clearing site data removes the ledger unless the user has a CSV backup.
 
