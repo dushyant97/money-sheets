@@ -915,20 +915,41 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     });
     if (!confirmed) return;
 
+    // New (sandboxed) session keeps real data in the effective store, so we can
+    // simply reload it. A legacy session (demo written into the real key by an
+    // older build) has no preserved original, so we clear it to a fresh ledger.
+    const sandboxed = showcaseActiveRef.current;
+
     setBusy(true);
     try {
-      // Leave the showcase session, drop the demo copy, then reload the real
-      // ledger from the effective store (local or Turso).
       showcaseActiveRef.current = false;
       setShowcaseSessionActive(false);
       clearShowcaseLedger();
-      const original = await loadActiveLedger();
-      syncFromSnapshot(original);
+
+      let original: LedgerSnapshot;
+      if (sandboxed) {
+        original = await loadActiveLedger();
+      } else {
+        // Demo data lives in the real store and the original was already lost by
+        // the old implementation — reset to an empty ledger so showcase turns off.
+        original = await clearActiveLedger();
+      }
+      // Defensively make sure the showcase flag is cleared in what we restore.
+      if (original.settings?.showcaseMode) {
+        original = { ...original, settings: { ...original.settings, showcaseMode: false } };
+        await persist(original);
+      } else {
+        syncFromSnapshot(original);
+      }
       setForm(emptyForm());
       setEditingId(null);
       setShowAdd(false);
       await refreshSyncStatus();
-      setMessage('Showcase mode off. Your original data is back.');
+      setMessage(
+        sandboxed
+          ? 'Showcase mode off. Your original data is back.'
+          : 'Showcase mode off. Demo data cleared.'
+      );
     } catch (error) {
       setMessage(errorMessage(error));
     } finally {
