@@ -1,12 +1,10 @@
-import { Suspense, lazy, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useMemo, useState } from 'react';
 import { useLedger } from '../../ledger';
 import { useIsMobile } from '../../hooks/useMediaQuery';
 import { detectDeviceName } from '../../utils/deviceName';
 import { formatRelativeTime } from '../../utils/time';
 import { dbNameFromUrl } from '../../../../shared/pairing/payload';
-import { isTursoConfigComplete } from '../../../../shared/storage/prefs';
-import type { StorageMode, TursoConfig } from '../../../../shared/storage/types';
-import { StorageReplaceModal } from '../StorageReplaceModal';
+import type { TursoConfig } from '../../../../shared/storage/types';
 import { AdvancedSyncFields } from './AdvancedSyncFields';
 import type { PairDialogMode } from './DevicePairDialog';
 
@@ -22,36 +20,22 @@ const DevicePairDialog = lazy(() =>
  * device and scans it on a new one. Manual credentials live under Advanced.
  */
 export function SyncOtherDevicesPanel() {
-  const { storagePrefs, effectiveStorage, testTursoConnection, applyStorageSettings, busy, showcaseMode, lastUpdatedAt } =
+  const { storagePrefs, effectiveStorage, testTursoConnection, joinTursoDevice, busy, showcaseMode, lastUpdatedAt } =
     useLedger();
   const isMobile = useIsMobile();
   const deviceName = useMemo(() => detectDeviceName(), []);
 
   const [dialog, setDialog] = useState<PairDialogMode | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [replaceTarget, setReplaceTarget] = useState<StorageMode | null>(null);
-  const confirmResolverRef = useRef<((value: boolean) => void) | null>(null);
 
-  const tursoConfigured = storagePrefs.mode === 'turso' && isTursoConfigComplete(storagePrefs.turso);
   const tursoActive = effectiveStorage.effectiveMode === 'turso';
   const canGenerate = tursoActive && !showcaseMode;
 
-  function confirmReplace(target: StorageMode): Promise<boolean> {
-    setReplaceTarget(target);
-    return new Promise<boolean>((resolve) => {
-      confirmResolverRef.current = resolve;
-    });
-  }
-
-  function resolveConfirm(value: boolean) {
-    setReplaceTarget(null);
-    confirmResolverRef.current?.(value);
-    confirmResolverRef.current = null;
-  }
-
   async function applyCredentials(credentials: TursoConfig) {
-    // Success reloads the app; if it returns we either aborted or errored.
-    await applyStorageSettings({ mode: 'turso', turso: credentials }, confirmReplace);
+    // Adopt the shared database without pushing this device's (possibly empty)
+    // cache over it. Reloads; boot reconciliation pulls the remote data, or
+    // shows the conflict dialog if this device already had its own data.
+    await joinTursoDevice(credentials);
   }
 
   const status = tursoActive
@@ -174,14 +158,6 @@ export function SyncOtherDevicesPanel() {
             onClose={() => setDialog(null)}
           />
         </Suspense>
-      ) : null}
-
-      {replaceTarget ? (
-        <StorageReplaceModal
-          targetMode={replaceTarget}
-          onConfirm={() => resolveConfirm(true)}
-          onCancel={() => resolveConfirm(false)}
-        />
       ) : null}
     </div>
   );

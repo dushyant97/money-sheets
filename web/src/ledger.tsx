@@ -201,6 +201,12 @@ type LedgerState = {
     next: StoragePreferences,
     confirmReplace: (targetMode: StorageMode) => Promise<boolean> | boolean
   ) => Promise<boolean>;
+  /**
+   * Connect this device to an existing Turso database without overwriting the
+   * remote: persists credentials and reloads so boot reconciliation pulls the
+   * shared data (or prompts on a real conflict). Used by device pairing.
+   */
+  joinTursoDevice: (credentials: TursoConfig) => Promise<void>;
   syncNow: () => Promise<void>;
   resolveConflict: (choice: 'local' | 'turso') => Promise<void>;
   importExcelToTurso: (file: File) => Promise<void>;
@@ -1018,6 +1024,24 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   }
 
   /**
+   * Connect this device to an existing Turso database (via QR pairing or the
+   * Advanced fields). Unlike {@link applyStorageSettings}, this never pushes the
+   * local cache over the remote: it persists the credentials and reloads, then
+   * boot reconciliation pulls the remote data when this device is empty, pushes
+   * up when only the remote is empty, or prompts on a genuine two-sided
+   * conflict. This is what makes a freshly paired device adopt the shared data
+   * instead of wiping it.
+   */
+  async function joinTursoDevice(credentials: TursoConfig): Promise<void> {
+    const next: StoragePreferences = { mode: 'turso', turso: credentials };
+    saveStoragePreferences(next);
+    storagePrefsRef.current = next;
+    setStoragePrefs(next);
+    // Full reload so bootstrapTurso performs the four-case reconciliation.
+    window.location.reload();
+  }
+
+  /**
    * Re-check local vs Turso and reconcile. Pulls/pushes when only one side has
    * data; on a genuine two-sided divergence it opens the conflict dialog rather
    * than merging silently.
@@ -1201,6 +1225,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     exitShowcaseMode,
     testTursoConnection,
     applyStorageSettings,
+    joinTursoDevice,
     syncNow,
     resolveConflict,
     importExcelToTurso,
