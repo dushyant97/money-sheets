@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Account, Budget, Category, Transaction, TransactionFormInput } from '../../shared/finance';
 import {
   TransactionFilters,
@@ -69,7 +69,16 @@ import {
   type LedgerChange
 } from './storage/tursoAdapter';
 import { loadStoragePreferences, saveStoragePreferences } from './storage/prefsStore';
+import { loadLastSyncedRevision, saveLastSyncedRevision } from './storage/syncMetaStore';
 import { isOnline, resolveEffectiveStorage } from './storage/activeStorage';
+import { compareRevisions } from '../../shared/sync/revisions';
+import { shouldCheck } from '../../shared/sync/cooldown';
+import {
+  deriveSyncPhase,
+  type SyncActivity,
+  type SyncPhase
+} from '../../shared/sync/syncState';
+import type { Revision } from '../../shared/sync/constants';
 import { applyStorageSwitch } from './storage/switchMode';
 import {
   SYNC_STATUS_LABEL,
@@ -151,8 +160,12 @@ type LedgerState = {
   storagePrefs: StoragePreferences;
   effectiveStorage: EffectiveStorageInfo;
   syncStatus: SyncStatus;
+  /** Rich display phase for the sync status UI (icon/label/description). */
+  syncPhase: SyncPhase;
   /** ISO timestamp of the active snapshot, used for "last synced/updated" copy. */
   lastUpdatedAt: string | null;
+  /** ISO timestamp of the last successful cloud sync, for "Last synced X ago". */
+  lastSyncedAt: string | null;
   conflict: ConflictInfo | null;
   mainTab: MainTab;
   homeView: HomeView;
@@ -178,7 +191,16 @@ type LedgerState = {
   exportPrompt: boolean;
   beginExport: () => void;
   cancelExport: () => void;
+  /**
+   * Manual Refresh: metadata-first check that pulls when the cloud is newer and
+   * routes a real divergence to the conflict flow. Bypasses the cooldown.
+   */
   refresh: () => Promise<void>;
+  /**
+   * Throttled, automatic metadata check used by navigation/focus/visibility
+   * triggers. Auto-pulls only when the cloud is newer and local is clean.
+   */
+  checkForUpdates: () => Promise<void>;
   saveTransaction: () => Promise<void>;
   deleteTransaction: (transaction: Transaction) => Promise<void>;
   startEdit: (transaction: Transaction) => void;
@@ -249,6 +271,17 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(() =>
     computeSyncStatus(resolveEffectiveStorage(storagePrefsRef.current), null, null)
   );
+  // Transient sync work and the last known local/cloud relationship feed the
+  // rich display phase. The baseline ref records the cloud revision at the last
+  // successful sync so we can tell a one-sided change from a real divergence.
+  const [syncActivity, setSyncActivity] = useState<SyncActivity>('idle');
+  const [comparison, setComparison] = useState<'up_to_date' | 'cloud_newer' | 'local_newer' | 'diverged' | null>(
+    null
+  );
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const lastSyncedRevisionRef = useRef<Revision>(loadLastSyncedRevision());
+  const lastSyncCheckAtRef = useRef<number | null>(null);
+  const inFlightCheckRef = useRef<Promise<void> | null>(null);
   const [mainTab, setMainTab] = useState<MainTab>('trans');
   const [homeView, setHomeView] = useState<HomeView>('calendar');
   const [selectedMonth, setSelectedMonth] = useState(() => new Date());
@@ -287,7 +320,36 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     setCategoryFocus(null);
   }
 
+  // Navigation between major sections is a natural moment to look for cloud
+  // updates — throttled so rapid switching issues at most one request.
+  function navigateTab(tab: MainTab) {
+    setMainTab(tab);
+    void checkForUpdates();
+  }
+
   const currentMonth = monthKey(selectedMonth);
+
+  // Rich display phase, derived from live state so it never goes stale.
+  const syncPhase = useMemo<SyncPhase>(
+    () =>
+      deriveSyncPhase({
+        preferredMode: effectiveStorage.preferredMode,
+        isOnline: effectiveStorage.isOnline,
+        effectiveMode: effectiveStorage.effectiveMode,
+        activity: syncActivity,
+        hasConflict: conflict !== null,
+        comparison
+      }),
+    [effectiveStorage, syncActivity, conflict, comparison]
+  );
+
+  /** Record the cloud revision we are now in sync with (ref + persisted + UI). */
+  function recordSyncedRevision(revision: Revision) {
+    lastSyncedRevisionRef.current = revision;
+    saveLastSyncedRevision(revision);
+    setComparison('up_to_date');
+    setLastSyncedAt(new Date().toISOString());
+  }
 
   function syncFromSnapshot(next: LedgerSnapshot) {
     setSnapshot(next);
@@ -410,6 +472,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     // no conflict prompt needed.
     if (local && local.updatedAt === remote.updatedAt) {
       await saveLocalLedger(remote);
+      recordSyncedRevision(remote.updatedAt ?? null);
       await refreshSyncStatus();
       return { snapshot: remote, message: bootMessage(info) };
     }
@@ -419,6 +482,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 
     if (syncCase === 'conflict' && local) {
       setConflict({ local, remote });
+      setComparison('diverged');
       setSyncStatus('not_synced');
       return {
         snapshot: local,
@@ -429,12 +493,14 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     if (syncCase === 'push_local' && local) {
       await saveTursoLedger(prefs.turso, local);
       await saveLocalLedger(local);
+      recordSyncedRevision(local.updatedAt ?? null);
       await refreshSyncStatus();
       return { snapshot: local, message: 'Pushed your local data to Turso.' };
     }
 
     // fresh or pull: Turso is authoritative; mirror it into the local cache.
     await saveLocalLedger(remote);
+    recordSyncedRevision(remote.updatedAt ?? null);
     await refreshSyncStatus();
     return { snapshot: remote, message: bootMessage(info) };
   }
@@ -499,40 +565,18 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
       void refreshSyncStatus();
     }
 
-    // On reconnect, re-evaluate the connection cases: pull when only Turso has
-    // newer data, prompt on a genuine conflict, otherwise flag "not synced" so
-    // the user can push via "Sync now".
+    // On reconnect, run the baseline-aware metadata check (bypassing the
+    // cooldown). It auto-pulls when only the cloud changed, auto-pushes when
+    // only this device changed (Case A — no prompt), and flags a real two-sided
+    // divergence as a conflict to resolve via Refresh.
     async function handleOnline() {
       const prefs = storagePrefsRef.current;
       if (prefs.mode !== 'turso' || !isTursoConfigComplete(prefs.turso)) {
         await refreshSyncStatus();
         return;
       }
-      const info = resolveEffectiveStorage(prefs);
-      setEffectiveStorage(info);
-      try {
-        const [remote, local] = await Promise.all([loadTursoLedger(prefs.turso), loadLocalLedger()]);
-        if (local.updatedAt === remote.updatedAt) {
-          await refreshSyncStatus();
-          return;
-        }
-        const syncCase = resolveSyncCase({
-          connected: true,
-          localEmpty: local.transactions.length === 0,
-          tursoEmpty: remote.transactions.length === 0
-        });
-        if (syncCase === 'pull') {
-          await saveLocalLedger(remote);
-          syncFromSnapshot(remote);
-        } else if (syncCase === 'conflict') {
-          setConflict({ local, remote });
-        } else if (syncCase === 'push_local') {
-          await saveTursoLedger(prefs.turso, local);
-        }
-        await refreshSyncStatus();
-      } catch {
-        await refreshSyncStatus();
-      }
+      setEffectiveStorage(resolveEffectiveStorage(prefs));
+      await checkForUpdates({ force: true });
     }
 
     window.addEventListener('online', handleOnline);
@@ -543,15 +587,124 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  /**
+   * Metadata-first sync check. Compares the local snapshot's `updatedAt` to the
+   * Turso `ledger_updated_at` marker (no full download) and reconciles:
+   *  - up_to_date  → just record the baseline.
+   *  - cloud_newer → pull the full ledger (local is clean, safe to replace).
+   *  - local_newer → flag "not synced" (auto) or push (manual Refresh).
+   *  - diverged    → flag conflict (auto) or open the conflict dialog (manual).
+   *
+   * `manual` Refresh bypasses the cooldown and surfaces conflicts; automatic
+   * checks are throttled and never clobber local edits. Concurrent calls are
+   * coalesced via `inFlightCheckRef`.
+   */
+  async function checkForUpdates(options?: { manual?: boolean; force?: boolean }): Promise<void> {
+    const manual = options?.manual ?? false;
+    // `force` bypasses the cooldown (e.g. reconnect) without treating the check
+    // as a manual action — so a real conflict is flagged, not auto-prompted.
+    const force = options?.force ?? manual;
+    const prefs = storagePrefsRef.current;
+
+    // Only meaningful when Turso is the chosen store and not in a demo session.
+    if (showcaseActiveRef.current || prefs.mode !== 'turso' || !isTursoConfigComplete(prefs.turso)) {
+      if (manual) await refresh();
+      return;
+    }
+    if (!isOnline()) {
+      await refreshSyncStatus();
+      return;
+    }
+    // Coalesce rapid triggers (tab switching / refresh spam).
+    if (inFlightCheckRef.current) return inFlightCheckRef.current;
+    if (!force && !shouldCheck(lastSyncCheckAtRef.current)) return;
+
+    const run = (async () => {
+      lastSyncCheckAtRef.current = Date.now();
+      setSyncActivity('checking');
+      try {
+        const local = await loadLocalLedger();
+        const remoteRev = await loadTursoUpdatedAt(prefs.turso);
+        const cmp = compareRevisions(local.updatedAt ?? null, remoteRev, lastSyncedRevisionRef.current);
+
+        if (cmp === 'up_to_date') {
+          recordSyncedRevision(remoteRev);
+          await refreshSyncStatus();
+          return;
+        }
+
+        if (cmp === 'cloud_newer') {
+          // Local is clean relative to the baseline → safe to adopt the cloud copy.
+          setSyncActivity('syncing');
+          const remote = await loadTursoLedger(prefs.turso);
+          await saveLocalLedger(remote);
+          syncFromSnapshot(remote);
+          recordSyncedRevision(remote.updatedAt ?? null);
+          await refreshSyncStatus();
+          setMessage('Updated from the cloud.');
+          return;
+        }
+
+        if (cmp === 'local_newer') {
+          // Only this device changed since the last sync; the cloud still
+          // matches our baseline, so pushing can't clobber anyone. Auto-push on
+          // both automatic checks and manual Refresh (no conflict, no prompt).
+          setComparison('local_newer');
+          try {
+            setSyncActivity('syncing');
+            await saveTursoLedger(prefs.turso, local);
+            recordSyncedRevision(local.updatedAt ?? null);
+            setMessage(manual ? 'Pushed your changes to the cloud.' : 'Synced your changes to the cloud.');
+          } catch (pushError) {
+            // Push failed (e.g. flaky network): keep the cached data and leave
+            // the pill at "Not synced" so a later check/Refresh retries.
+            if (manual) {
+              setMessage(`Could not push to the cloud (${errorMessage(pushError)}). Your changes are saved locally.`);
+            }
+          }
+          await refreshSyncStatus();
+          return;
+        }
+
+        // diverged: both sides moved since the last common sync.
+        setComparison('diverged');
+        if (manual) {
+          const remote = await loadTursoLedger(prefs.turso);
+          setConflict({ local, remote });
+          setMessage('This device and the cloud both changed. Choose which copy to keep.');
+        }
+      } catch (error) {
+        // Leave the cache intact; only the manual path narrates the failure.
+        if (manual) setMessage(`Could not reach the cloud (${errorMessage(error)}). Showing local data.`);
+      } finally {
+        setSyncActivity('idle');
+      }
+    })();
+
+    inFlightCheckRef.current = run;
+    try {
+      await run;
+    } finally {
+      inFlightCheckRef.current = null;
+    }
+  }
+
   async function refresh() {
+    const prefs = storagePrefsRef.current;
+    // Turso mode: run the metadata-first manual flow (handles pull/push/conflict).
+    if (!showcaseActiveRef.current && prefs.mode === 'turso' && isTursoConfigComplete(prefs.turso)) {
+      await checkForUpdates({ manual: true });
+      return;
+    }
+    // Local / showcase: reload from the active store.
     if (!snapshot) return;
     setBusy(true);
     try {
-      const info = resolveEffectiveStorage(storagePrefsRef.current);
+      const info = resolveEffectiveStorage(prefs);
       setEffectiveStorage(info);
       const loaded = await loadActiveLedger();
       syncFromSnapshot(loaded);
-      setMessage(info.effectiveMode === 'turso' ? 'Ledger refreshed from Turso.' : 'Ledger refreshed from local storage.');
+      setMessage('Ledger refreshed from local storage.');
     } catch (error) {
       setMessage(errorMessage(error));
     } finally {
@@ -1061,6 +1214,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
       const [remote, local] = await Promise.all([loadTursoLedger(prefs.turso), loadLocalLedger()]);
       if (local.updatedAt === remote.updatedAt && remote.transactions.length > 0) {
         setEffectiveStorage(resolveEffectiveStorage(prefs));
+        recordSyncedRevision(remote.updatedAt ?? null);
         await refreshSyncStatus();
         setMessage('Already in sync with Turso.');
         return;
@@ -1073,11 +1227,13 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
       if (syncCase === 'pull') {
         await saveLocalLedger(remote);
         syncFromSnapshot(remote);
+        recordSyncedRevision(remote.updatedAt ?? null);
         setMessage('Pulled the latest data from Turso.');
       } else if (syncCase === 'fresh' || syncCase === 'push_local') {
         await saveTursoLedger(prefs.turso, local);
         await saveLocalLedger(local);
         syncFromSnapshot(local);
+        recordSyncedRevision(local.updatedAt ?? null);
         setMessage(`Pushed ${local.transactions.length} transactions to Turso.`);
       } else {
         setConflict({ local, remote });
@@ -1105,10 +1261,12 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
         await saveTursoLedger(prefs.turso, pending.local);
         await saveLocalLedger(pending.local);
         syncFromSnapshot(pending.local);
+        recordSyncedRevision(pending.local.updatedAt ?? null);
         setMessage('Turso was replaced with the data from this device.');
       } else {
         await saveLocalLedger(pending.remote);
         syncFromSnapshot(pending.remote);
+        recordSyncedRevision(pending.remote.updatedAt ?? null);
         setMessage('This device now shows the data from Turso.');
       }
       setConflict(null);
@@ -1183,7 +1341,9 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     storagePrefs,
     effectiveStorage,
     syncStatus,
+    syncPhase,
     lastUpdatedAt: snapshot?.updatedAt ?? null,
+    lastSyncedAt,
     conflict,
     mainTab,
     homeView,
@@ -1193,7 +1353,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     editingId,
     showAdd,
     categoryFocus,
-    setMainTab,
+    setMainTab: navigateTab,
     setHomeView,
     setSelectedMonth,
     setFilters,
@@ -1206,6 +1366,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     beginExport,
     cancelExport,
     refresh,
+    checkForUpdates,
     saveTransaction,
     deleteTransaction,
     startEdit,

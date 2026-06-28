@@ -54,19 +54,46 @@ The first time the web app connects to a Turso database that still holds the old
 
 ### How Turso mode behaves (web)
 
-The web app handles four connection cases on boot, on a storage-mode switch, and on reconnect:
+When online with Turso active, **every edit writes straight to Turso** (one row per change) and mirrors to the local cache. The app handles four connection cases on boot, on a storage-mode switch, and on reconnect:
 
 | Case | This device | Turso | Behavior |
 |---|---|---|---|
 | 1 | Empty | Empty | Start fresh; new edits write to Turso and mirror to the local cache. |
 | 2 | — | — (offline) | Operate on the local cache only; reconcile on reconnect. |
 | 3 | Empty | Has data | Pull Turso into the UI and local cache. |
-| 4 | Has data | Has data | **Prompt**: keep this device (overwrites Turso) or keep Turso (overwrites this device). No silent merge. |
+| 4 | Has data | Has data | If only one side changed since the last sync, reconcile automatically (see below). On a genuine two-sided change, **prompt**: keep this device (overwrites Turso) or keep Turso (overwrites this device). No silent merge. |
 
-A **sync status** indicator in the sidebar shows `Synced with Turso`, `Not synced with Turso` (with a **Sync now** button), `Offline · local copy`, or `Local only`. Sync comparison uses a `ledger_updated_at` marker stored in the `settings` table.
+#### Lightweight, metadata-first sync (no polling, no backend)
 
-- **Offline:** the app falls back to the local cache and marks Turso unavailable. You can keep working; changes are saved locally.
-- **Back online:** it pulls when only Turso changed, prompts on a genuine two-sided conflict, and otherwise flags "Not synced" so you can push with **Sync now**.
+Sync is **not** real-time. Instead the app runs a cheap check — comparing the `ledger_updated_at` marker in the `settings` table, **without downloading the whole ledger** — triggered by natural interactions:
+
+- App start, and when the tab/PWA regains focus or becomes visible again (`focus` / `visibilitychange` / `pageshow`).
+- Navigating between major sections (Records → Stats → Categories → …).
+- Coming back online.
+
+These automatic checks are **throttled** (a 30-second cooldown) and de-duplicated, so rapid tab switching issues at most one request. A persisted *last-synced revision* baseline lets the app tell a one-sided change from a real conflict:
+
+- **Cloud newer** (only Turso changed) → **auto-pull** the latest ledger and update the UI.
+- **Local newer** (only this device changed, e.g. offline edits) → **auto-push** to Turso. This is safe because the cloud still matches the baseline, so nothing is overwritten — no prompt.
+- **Diverged** (both changed since the last sync) → flag a **conflict**; resolve it with **Refresh** (Push local / Use cloud).
+
+#### Sync status states
+
+A **sync status** indicator (sidebar on desktop, top bar on mobile) shows a richer state with an icon, label, and — when synced — a relative *"Last synced X ago"*:
+
+| State | Meaning |
+|---|---|
+| 🟢 **Up to date** | In sync with the cloud. |
+| 🟡 **Checking…** | A lightweight metadata check is in flight. |
+| 🔵 **Syncing…** | Downloading/uploading the ledger. |
+| 🟡 **Not synced** | This device has changes not yet pushed (transient; auto-pushes on the next check). |
+| ⚠️ **Conflict detected** | Both sides changed — choose which copy to keep. |
+| 🔴 **Offline** | No connectivity; using local data. |
+| ⚪ **Local only** | Turso not configured. |
+
+A **Refresh** control forces an immediate check (bypassing the cooldown): desktop uses the **DATA → Refresh** action in the sidebar, and mobile shows a Refresh button beside the status pill.
+
+- **Offline:** the app falls back to the local cache and marks Turso unavailable. You can keep working; changes are saved locally and pushed automatically once you reconnect (unless a true conflict requires your choice).
 - **Switching modes** copies your current data into the target store, confirming before replacing existing data.
 - **Settings → Import from Excel file:** when Turso mode is active, you can import an Excel/CSV file and push it straight to Turso (replacing the remote database and the local cache). This is disabled while offline.
 
@@ -423,15 +450,17 @@ money-sheets-starter/
 │   ├── uiHelpers.ts        # Category meta, CHART_PALETTE, ring/pie geometry, money formatters
 │   ├── nav.ts              # Shared NAV tabs (id, label, icon, tint) for web + mobile
 │   ├── theme.ts            # Light + dark palettes (ThemePalette), design tokens
-│   └── storage/            # Storage abstraction: types, prefs, Turso SQL schema
+│   ├── storage/            # Storage abstraction: types, prefs, Turso SQL schema
+│   └── sync/               # Pure sync logic: revisions (compare), cooldown, sync-state map
 ├── web/
 │   └── src/
 │       ├── App.tsx                 # Shell, Transactions, Stats (ring + trends), Accounts, More
 │       ├── Calculator.tsx          # Calculator modal (amount entry)
 │       ├── theme.tsx               # Light/dark ThemeProvider + useTheme (persisted, no-FOUC)
 │       ├── spreadsheet.ts          # SheetJS read (.csv/.xlsx) + .xlsx export (lazy-loaded)
-│       ├── ledger.tsx              # React context, load/save/import/export, settings, storage
-│       └── storage/                # localAdapter, tursoAdapter, prefsStore, activeStorage, switchMode
+│       ├── ledger.tsx              # React context, load/save/import/export, settings, storage, sync
+│       ├── sync/                   # useSync hook + useSyncTriggers (focus/visibility/nav checks)
+│       └── storage/                # localAdapter, tursoAdapter, prefsStore, syncMetaStore, activeStorage, switchMode
 └── mobile/
     ├── assets/                     # icon.png, adaptive-icon.png, splash.png
     └── src/

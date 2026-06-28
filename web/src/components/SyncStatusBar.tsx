@@ -1,14 +1,34 @@
-import { useLedger, SYNC_STATUS_LABEL, SYNC_STATUS_SHORT } from '../ledger';
-import { canShowSyncNow } from '../storage/syncPolicy';
+import { useEffect, useState } from 'react';
+import { useSync } from '../sync/useSync';
+import { formatRelativeTime } from '../utils/time';
+
+const TONE_BY_PHASE: Record<string, string> = {
+  up_to_date: 'online',
+  not_synced: 'warn',
+  conflict: 'warn',
+  offline: 'offline',
+  checking: '',
+  syncing: '',
+  local_only: ''
+};
 
 /**
- * Turso sync status + optional "Sync now" action. Rendered in the top bar (all
- * viewports) and the desktop sidebar so mobile users are not blind to sync state.
+ * Rich Turso sync status (icon + label + "Last synced X ago") with a manual
+ * Refresh control. Rendered in the top bar (compact, all viewports — so mobile
+ * gets a Refresh button) and the desktop sidebar (full).
  */
 export function SyncStatusBar({ compact = false }: { compact?: boolean }) {
-  const { effectiveStorage, syncStatus, syncNow, busy } = useLedger();
+  const { phase, meta, lastSynced, refresh, isBusy } = useSync();
 
-  if (effectiveStorage.preferredMode !== 'turso') {
+  // Re-render every 30s so the relative "Last synced" copy stays fresh.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (phase !== 'up_to_date' || !lastSynced) return;
+    const id = window.setInterval(() => setTick((t) => t + 1), 30_000);
+    return () => window.clearInterval(id);
+  }, [phase, lastSynced]);
+
+  if (phase === 'local_only') {
     if (!compact) {
       return (
         <div className="offline-pill">
@@ -18,29 +38,46 @@ export function SyncStatusBar({ compact = false }: { compact?: boolean }) {
       );
     }
     return (
-      <div className="offline-pill sync-status-bar compact" title="Switch to Turso DB under More → Storage to sync to the cloud">
+      <div
+        className="offline-pill sync-status-bar compact"
+        title="Switch to Turso DB under More → Storage to sync to the cloud"
+      >
         <span className="offline-dot" />
         <span className="sync-status-label">Local</span>
       </div>
     );
   }
 
-  const label = SYNC_STATUS_LABEL[syncStatus];
-  const tone = syncStatus === 'synced' ? 'online' : syncStatus === 'not_synced' ? 'warn' : '';
-  const showSync = canShowSyncNow(effectiveStorage, syncStatus);
+  const tone = TONE_BY_PHASE[phase] ?? '';
+  const relative = phase === 'up_to_date' ? formatRelativeTime(lastSynced) : null;
+  const subtitle = relative ? `Last synced ${relative}` : meta.description;
+  const refreshTitle = phase === 'conflict' ? 'Resolve sync conflict' : 'Check for cloud updates';
 
   return (
-    <div className={`offline-pill sync-status-bar ${tone} ${compact ? 'compact' : ''}`} title={label}>
-      <span className="offline-dot" />
-      <span className="sync-status-label">{compact ? SYNC_STATUS_SHORT[syncStatus] : label}</span>
-      {showSync ? (
+    <div
+      className={`offline-pill sync-status-bar ${tone} ${compact ? 'compact' : ''}`}
+      data-phase={phase}
+      title={compact ? `${meta.label} · ${subtitle}` : meta.label}
+    >
+      <span className="sync-status-icon" aria-hidden>
+        {meta.icon}
+      </span>
+      <span className="sync-status-text">
+        <span className="sync-status-label">{compact ? meta.shortLabel : meta.label}</span>
+        {!compact && subtitle ? <span className="sync-status-sub">{subtitle}</span> : null}
+      </span>
+      {compact ? (
         <button
           type="button"
-          className="ghost sm sync-now-btn"
-          disabled={busy}
-          onClick={() => void syncNow()}
+          className={`ghost sm sync-refresh-btn ${isBusy ? 'is-busy' : ''}`}
+          disabled={isBusy}
+          title={refreshTitle}
+          aria-label={refreshTitle}
+          onClick={() => void refresh()}
         >
-          Sync now
+          <span className="sync-refresh-icon" aria-hidden>
+            ⟳
+          </span>
         </button>
       ) : null}
     </div>

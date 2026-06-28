@@ -387,8 +387,43 @@ a { color: inherit; text-decoration: none; }
   font-size: 0.72rem;
   max-width: min(100%, 280px);
 }
-.sync-status-bar .sync-status-label { flex: 1; min-width: 0; }
+.sync-status-bar .sync-status-label { min-width: 0; }
 .topbar-actions .sync-status-bar.compact { margin-right: 4px; }
+
+/* Offline tone (🔴) — muted red pill. */
+.offline-pill.offline {
+  background: rgba(255, 92, 92, 0.1);
+  border-color: rgba(255, 92, 92, 0.3);
+  color: #d64545;
+}
+.offline-pill.offline .offline-dot { background: #ff5c5c; animation: none; }
+
+/* Rich status layout: leading icon, stacked text, trailing Refresh. */
+.sync-status-icon { font-size: 0.8rem; line-height: 1; flex: none; }
+.sync-status-text { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 1px; }
+.sync-status-sub {
+  font-size: 0.66rem;
+  font-weight: 600;
+  opacity: 0.78;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sync-refresh-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+}
+.sync-refresh-icon { display: inline-block; font-size: 0.95rem; line-height: 1; }
+.sync-refresh-btn.is-busy .sync-refresh-icon { animation: sync-spin 0.9s linear infinite; }
+@keyframes sync-spin { to { transform: rotate(360deg); } }
+
+/* Collapsed sidebar: keep only the status icon. */
+.sidebar.collapsed .sync-status-icon { font-size: 0.85rem; }
+.sidebar.collapsed .sync-status-text,
+.sidebar.collapsed .sync-refresh-btn { display: none; }
 
 .sync-conflict-grid {
   display: grid;
@@ -1358,6 +1393,30 @@ textarea { min-height: 76px; resize: vertical; }
 
 .modal-head { display: flex; justify-content: space-between; align-items: center; }
 .modal-head strong { font-size: 1rem; }
+.modal-head-spacer { width: 52px; }
+
+/* Add-record dialog: scrollable body + sticky action footer. */
+.add-modal { display: flex; flex-direction: column; gap: 0; padding: 0; overflow: hidden; }
+.add-modal .modal-head { padding: 18px 22px 12px; }
+.add-modal .modal-body {
+  display: grid;
+  gap: 16px;
+  padding: 4px 22px 18px;
+  overflow: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.modal-foot {
+  display: flex;
+  gap: 10px;
+  padding: 14px 22px calc(14px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg-elevated);
+  position: sticky;
+  bottom: 0;
+}
+.modal-foot .ghost { flex: 0 0 auto; }
+.modal-foot .modal-save { flex: 1 1 auto; }
 
 .type-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .toggle {
@@ -2104,10 +2163,15 @@ textarea { min-height: 76px; resize: vertical; }
   .topbar .month-nav .nav-btn { width: 24px; height: 24px; font-size: 0.88rem; }
   .topbar-actions { order: 3; flex: 1 1 auto; justify-content: flex-end; gap: 6px; min-width: 0; }
 
-  /* Compact sync status: small dot + short status text (e.g. "Synced"). */
-  .topbar-actions .sync-status-bar.compact { padding: 5px 9px; max-width: none; }
+  /* Compact sync status: icon + short status text (e.g. "Synced") + Refresh. */
+  .topbar-actions .sync-status-bar.compact { padding: 5px 8px; max-width: none; gap: 5px; }
   .topbar-actions .sync-status-bar.compact .sync-status-label { display: inline; font-size: 0.68rem; }
-  .topbar-actions .sync-status-bar.compact .sync-now-btn { margin-left: 4px; padding: 2px 7px; font-size: 0.62rem; }
+  .topbar-actions .sync-status-bar.compact .sync-refresh-btn {
+    margin-left: 2px;
+    padding: 3px 6px;
+    min-width: 0;
+  }
+  .topbar-actions .sync-status-bar.compact .sync-refresh-icon { font-size: 0.9rem; }
 
   /* Smaller theme toggle so it fits the single-line header. */
   .theme-toggle { transform: scale(0.86); transform-origin: center; }
@@ -2116,6 +2180,24 @@ textarea { min-height: 76px; resize: vertical; }
   .fab { padding: 0; width: 36px; height: 36px; border-radius: 50%; justify-content: center; gap: 0; }
   .fab .plus { font-size: 1.35rem; }
   .fab-text { display: none; }
+
+  /* Add-record dialog as a full-height bottom sheet with pinned Save. */
+  .modal-backdrop:has(.add-modal) { padding: 0; place-items: end stretch; }
+  .add-modal {
+    width: 100%;
+    max-width: 100%;
+    max-height: 100dvh;
+    height: 100dvh;
+    border-radius: 0;
+  }
+  .add-modal .modal-head { padding: 14px 16px 10px; }
+  .add-modal .modal-body { padding: 2px 16px 14px; gap: 13px; }
+  .add-modal .modal-foot { padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); }
+
+  /* Compact category/account chips so the lists fit with little scrolling. */
+  .add-modal .chips { gap: 6px; }
+  .add-modal .chip { padding: 6px 11px 6px 7px; font-size: 0.76rem; gap: 5px; }
+  .add-modal .chip .chip-ico { width: 18px; height: 18px; font-size: 0.78rem; }
 
   .content { padding: 12px 12px calc(82px + env(safe-area-inset-bottom)); }
   .stack { gap: 11px; }

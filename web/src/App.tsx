@@ -36,6 +36,7 @@ import { ExportOptionsModal } from './components/ExportOptionsModal';
 import { SyncStatusBar } from './components/SyncStatusBar';
 import { StorageReplaceModal } from './components/StorageReplaceModal';
 import { SyncOtherDevicesPanel } from './components/syncDevices/SyncOtherDevicesPanel';
+import { useSyncTriggers } from './sync/useSyncTriggers';
 import { useTheme } from './theme';
 import './styles.css';
 
@@ -75,6 +76,9 @@ function AppShell() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(
     () => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1'
   );
+
+  // Throttled cloud checks on focus/visibility/pageshow + app start.
+  useSyncTriggers();
 
   // Reset scroll to the top of the page whenever the user switches sections.
   useEffect(() => {
@@ -2320,15 +2324,14 @@ function AddModal() {
 
   return (
     <div className="modal-backdrop" onClick={cancelEdit}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal add-modal" onClick={(e) => e.stopPropagation()}>
         <header className="modal-head">
           <button className="link" onClick={cancelEdit}>Cancel</button>
           <strong>{editingId ? 'Edit record' : 'Add record'}</strong>
-          <button className="link accent" onClick={() => void saveTransaction()} disabled={busy || !form.amount.trim()}>
-            Save
-          </button>
+          <span className="modal-head-spacer" aria-hidden />
         </header>
 
+        <div className="modal-body">
         <div className="type-toggle">
           <button className={form.type === 'expense' ? 'toggle active expense' : 'toggle'} onClick={() => setForm({ ...form, type: 'expense', category: expenseDefault })}>Expense</button>
           <button className={form.type === 'income' ? 'toggle active income' : 'toggle'} onClick={() => setForm({ ...form, type: 'income', category: incomeDefault })}>Income</button>
@@ -2421,6 +2424,18 @@ function AddModal() {
           <label>Receipt link</label>
           <input value={form.receiptUrl ?? ''} onChange={(e) => setForm({ ...form, receiptUrl: e.target.value })} placeholder="https://..." />
         </div>
+        </div>
+
+        <footer className="modal-foot">
+          <button className="ghost" onClick={cancelEdit}>Cancel</button>
+          <button
+            className="primary modal-save"
+            onClick={() => void saveTransaction()}
+            disabled={busy || !form.amount.trim()}
+          >
+            {editingId ? 'Save changes' : 'Save record'}
+          </button>
+        </footer>
       </div>
     </div>
   );
