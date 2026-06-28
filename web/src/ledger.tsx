@@ -151,6 +151,8 @@ type LedgerState = {
   storagePrefs: StoragePreferences;
   effectiveStorage: EffectiveStorageInfo;
   syncStatus: SyncStatus;
+  /** ISO timestamp of the active snapshot, used for "last synced/updated" copy. */
+  lastUpdatedAt: string | null;
   conflict: ConflictInfo | null;
   mainTab: MainTab;
   homeView: HomeView;
@@ -1157,6 +1159,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     storagePrefs,
     effectiveStorage,
     syncStatus,
+    lastUpdatedAt: snapshot?.updatedAt ?? null,
     conflict,
     mainTab,
     homeView,

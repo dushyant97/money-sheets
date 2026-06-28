@@ -29,11 +29,13 @@ import {
 import type { Account, AccountBalance, Category, Transaction, TransactionType } from '../../shared/finance';
 import { NAV as SHARED_NAV, TAB_TITLES } from '../../shared/nav';
 import type { StorageMode, StoragePreferences } from '../../shared/storage/types';
-import { isTursoConfigComplete, isValidTursoUrl } from '../../shared/storage/prefs';
+import { isTursoConfigComplete } from '../../shared/storage/prefs';
 import { Calculator } from './Calculator';
 import { ProgressOverlay } from './components/ProgressOverlay';
 import { ExportOptionsModal } from './components/ExportOptionsModal';
 import { SyncStatusBar } from './components/SyncStatusBar';
+import { StorageReplaceModal } from './components/StorageReplaceModal';
+import { SyncOtherDevicesPanel } from './components/syncDevices/SyncOtherDevicesPanel';
 import { useTheme } from './theme';
 import './styles.css';
 
@@ -1610,6 +1612,8 @@ function MoreView() {
     <div className="stack">
       <StorageSettingsPanel />
 
+      <SyncOtherDevicesPanel />
+
       <SettingsPanel />
 
       <ManagePanel />
@@ -1762,64 +1766,26 @@ function activeStorageDisplay(info: ReturnType<typeof useLedger>['effectiveStora
   };
 }
 
-function StorageReplaceModal({
-  targetMode,
-  onConfirm,
-  onCancel
-}: {
-  targetMode: StorageMode;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  const targetLabel = targetMode === 'turso' ? 'Turso DB' : 'Local Storage';
-  return (
-    <div className="modal-backdrop" onClick={onCancel}>
-      <div className="modal confirm-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="confirm-icon warn">⚠️</div>
-        <h3 style={{ margin: 0 }}>Replace data in {targetLabel}?</h3>
-        <p className="muted confirm-text">
-          {targetLabel} already has saved records. Continuing overwrites them with the data from your current
-          store. This cannot be undone — export a backup first if you need it.
-        </p>
-        <div className="confirm-actions">
-          <button className="ghost" onClick={onCancel}>Cancel</button>
-          <button className="primary" onClick={onConfirm}>Replace &amp; continue</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function StorageSettingsPanel() {
-  const { storagePrefs, effectiveStorage, busy, testTursoConnection, applyStorageSettings, importExcelToTurso } =
-    useLedger();
+  const { storagePrefs, effectiveStorage, busy, applyStorageSettings, importExcelToTurso } = useLedger();
   const excelInputRef = useRef<HTMLInputElement>(null);
 
   const [draftMode, setDraftMode] = useState<StorageMode>(storagePrefs.mode);
-  const [url, setUrl] = useState(storagePrefs.turso.url);
-  const [token, setToken] = useState(storagePrefs.turso.authToken);
-  const [showToken, setShowToken] = useState(false);
-  const [test, setTest] = useState<{ state: 'idle' | 'testing' | 'ok' | 'error'; message?: string }>({ state: 'idle' });
   const [replaceTarget, setReplaceTarget] = useState<StorageMode | null>(null);
   const confirmResolverRef = useRef<((value: boolean) => void) | null>(null);
 
   const active = activeStorageDisplay(effectiveStorage);
   const online = effectiveStorage.isOnline;
-  const draftTurso = { url: url.trim(), authToken: token.trim() };
-  const tursoComplete = isTursoConfigComplete(draftTurso);
-  const urlInvalid = url.trim().length > 0 && !isValidTursoUrl(url);
+  // Credentials are now entered via Sync Other Devices (pairing or Advanced),
+  // so this panel only switches the mode using whatever is already saved.
+  const tursoComplete = isTursoConfigComplete(storagePrefs.turso);
+  const needsCredentials = draftMode === 'turso' && !tursoComplete;
 
-  const dirty =
-    draftMode !== storagePrefs.mode ||
-    url.trim() !== storagePrefs.turso.url.trim() ||
-    token.trim() !== storagePrefs.turso.authToken.trim();
+  const dirty = draftMode !== storagePrefs.mode;
   const canSave = dirty && (draftMode === 'local' || tursoComplete) && !busy;
 
   function resetDraft() {
     setDraftMode(storagePrefs.mode);
-    setUrl(storagePrefs.turso.url);
-    setToken(storagePrefs.turso.authToken);
-    setTest({ state: 'idle' });
   }
 
   function confirmReplace(targetMode: StorageMode): Promise<boolean> {
@@ -1835,18 +1801,8 @@ function StorageSettingsPanel() {
     confirmResolverRef.current = null;
   }
 
-  async function runTest() {
-    setTest({ state: 'testing' });
-    try {
-      await testTursoConnection(draftTurso);
-      setTest({ state: 'ok', message: 'Connection successful — schema is ready.' });
-    } catch (error) {
-      setTest({ state: 'error', message: error instanceof Error ? error.message : 'Connection failed.' });
-    }
-  }
-
   async function save() {
-    const next: StoragePreferences = { mode: draftMode, turso: draftTurso };
+    const next: StoragePreferences = { mode: draftMode, turso: storagePrefs.turso };
     await applyStorageSettings(next, confirmReplace);
     // Success triggers a full reload; if it returns we either aborted or errored.
   }
@@ -1892,45 +1848,13 @@ function StorageSettingsPanel() {
       </div>
       <p className="storage-hint muted">Changes apply after Save &amp; Reload.</p>
 
-      {draftMode === 'turso' ? (
+      {needsCredentials ? (
         <div className="storage-config">
-          <span className="storage-section-label">Turso configuration</span>
-          <label className="field-group">
-            Database URL
-            <input
-              type="text"
-              placeholder="libsql://your-db-name.turso.io"
-              value={url}
-              onChange={(e) => { setUrl(e.target.value); setTest({ state: 'idle' }); }}
-              spellCheck={false}
-              autoCapitalize="none"
-            />
-          </label>
-          {urlInvalid ? <span className="storage-test-result error">Enter a libsql:// or https:// URL.</span> : null}
-          <label className="field-group">
-            Auth token
-            <span className="storage-token-row">
-              <input
-                type={showToken ? 'text' : 'password'}
-                placeholder="eyJ…"
-                value={token}
-                onChange={(e) => { setToken(e.target.value); setTest({ state: 'idle' }); }}
-                spellCheck={false}
-                autoCapitalize="none"
-              />
-              <button type="button" className="ghost sm" onClick={() => setShowToken((v) => !v)}>
-                {showToken ? 'Hide' : 'Show'}
-              </button>
-            </span>
-          </label>
-          <p className="storage-hint muted">Credentials are stored only on this device (in localStorage).</p>
-          <div className="storage-test-row">
-            <button type="button" className="ghost sm" onClick={() => void runTest()} disabled={!tursoComplete || test.state === 'testing'}>
-              {test.state === 'testing' ? 'Testing…' : 'Test connection'}
-            </button>
-            {test.state === 'ok' ? <span className="storage-test-result ok">{test.message}</span> : null}
-            {test.state === 'error' ? <span className="storage-test-result error">{test.message}</span> : null}
-          </div>
+          <p className="storage-hint muted">
+            No cloud credentials on this device yet. Use <strong>Sync Other Devices</strong> below to scan
+            a pairing QR from a connected device, or open its <strong>Advanced</strong> section to paste a
+            database URL and token.
+          </p>
         </div>
       ) : null}
 

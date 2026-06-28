@@ -75,10 +75,21 @@ A **sync status** indicator in the sidebar shows `Synced with Turso`, `Not synce
 1. Create a free database at [turso.tech](https://turso.tech) (or with the Turso CLI: `turso db create money-sheets`).
 2. Get the database URL (looks like `libsql://your-db-name.turso.io`).
 3. Create an auth token (`turso db tokens create money-sheets`).
-4. In the app, open **Budgets & Data → Storage**, pick **Turso DB**, paste the URL and token, and click **Test connection**.
-5. Click **Save & Reload**. The app creates the table if needed and uploads your current data.
+4. In the app, open **More → Sync Other Devices**, expand **Advanced**, paste the URL and token, and click **Test connection**.
+5. Click **Save & Reload**. The app creates the table if needed and uploads your current data. To add more devices afterwards, use the pairing QR described in [Sync Other Devices](#sync-other-devices-pairing) instead of retyping credentials.
 
 Your URL and token are stored only on your device (in `localStorage` on web, AsyncStorage on mobile) and are never sent anywhere except directly to your Turso database over HTTPS. Because all calls go from the client to Turso's HTTP API, this works on static hosts like GitHub Pages and inside the mobile app with no backend.
+
+### Sync Other Devices (pairing)
+
+Once one device is connected to Turso, you can add more without retyping the long URL and token. Open **More → Sync Other Devices** on the connected device and tap **Generate pairing QR**. It shows a QR code plus a 6-digit pairing code that expires after 5 minutes. On the new device, open the same panel and (on mobile) tap **Scan QR**, point the camera at the first device, then type the 6-digit code to confirm. The receiving device tests the connection and joins the same sync — no manual typing.
+
+How it stays safe without a backend:
+
+- The QR contains an **AES-256-GCM encrypted** payload, never the raw credentials. The key is derived (PBKDF2) from the 6-digit code, which is shown as text next to the QR and is **never encoded in it** — so a photo of the QR alone is useless.
+- The payload is signed with an HMAC so a tampered or non-Money-Sheets QR is rejected before decryption, and it **expires after 5 minutes** (enforced on both devices, with a small clock-skew allowance). There is no server, so security relies on physical proximity plus this short window — regenerate the QR if it lapses.
+- Desktop browsers show **Generate pairing QR** only (join a desktop via the **Advanced** section). Mobile devices can both generate and **scan**. Both options require cloud sync to be active first.
+- Power users can still paste a database URL and token directly under **Sync Other Devices → Advanced**.
 
 ### Turso on mobile
 
