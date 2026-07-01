@@ -1,4 +1,5 @@
 import type { StorageMode } from '../../../shared/storage/types';
+import { useEscToClose } from '../hooks/useEscToClose';
 
 /**
  * Confirmation shown when switching storage mode would overwrite existing data
@@ -14,6 +15,7 @@ export function StorageReplaceModal({
   onCancel: () => void;
 }) {
   const targetLabel = targetMode === 'turso' ? 'Turso DB' : 'Local Storage';
+  useEscToClose(onCancel);
   return (
     <div className="modal-backdrop" onClick={onCancel}>
       <div className="modal confirm-modal" onClick={(e) => e.stopPropagation()}>

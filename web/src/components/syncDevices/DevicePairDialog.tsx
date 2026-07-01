@@ -1,6 +1,7 @@
 import { QrGenerator } from './QrGenerator';
 import { ScanFlow } from './ScanFlow';
 import type { TursoConfig } from '../../../../shared/storage/types';
+import { useEscToClose } from '../../hooks/useEscToClose';
 
 export type PairDialogMode = 'generate' | 'scan';
 
@@ -27,6 +28,7 @@ export function DevicePairDialog({
   scan?: ScanHandlers;
   onClose: () => void;
 }) {
+  useEscToClose(onClose);
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal pair-dialog" onClick={(e) => e.stopPropagation()}>

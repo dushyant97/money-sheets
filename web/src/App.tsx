@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { PwaShell } from './components/PwaShell';
+import { useEscToClose } from './hooks/useEscToClose';
 import {
   LedgerProvider,
   useLedger,
@@ -14,16 +15,16 @@ import {
   monthTitle,
   monthKey,
   summarizeMonth,
-  summarizeWeek,
   summarizeByCategory,
   buildCalendarMonth,
   buildCategoryTrends,
   computeAccountBalances,
   carryOverBalance,
   transactionsInMonth,
+  dailySeries,
+  averageDailyStats,
   budgetProgressForMonth,
   filterTransactions,
-  type HomeView,
   type TrendGranularity
 } from './ledger';
 import { dateKey } from '../../shared/finance';
@@ -44,12 +45,9 @@ import './styles.css';
 const NAV = SHARED_NAV;
 const TITLES: Record<string, string> = TAB_TITLES;
 
-const HOME_VIEWS: Array<{ id: HomeView; label: string }> = [
-  { id: 'calendar', label: 'Calendar' },
-  { id: 'summary', label: 'Summary' }
-];
-
 const SIDEBAR_COLLAPSED_KEY = 'money-sheets-sidebar-collapsed';
+
+const RECENT_LIMIT = 8;
 
 const todayKey = () => dateKey();
 
@@ -63,6 +61,52 @@ const COLOR_CHOICES = [
   '#4f7cff', '#ff5d8f', '#ffb020', '#22c08b', '#9b6bff', '#ff7a45',
   '#22c3e6', '#f2495c', '#7ed957', '#c44dff', '#34d399', '#fbbf24'
 ];
+
+/** Tiny inline-SVG sparkline (line or bar) for the summary cards. */
+function Sparkline({
+  values,
+  color,
+  variant = 'line',
+  width = 120,
+  height = 34
+}: {
+  values: number[];
+  color: string;
+  variant?: 'line' | 'bar';
+  width?: number;
+  height?: number;
+}) {
+  const data = values.length ? values : [0, 0];
+  const max = Math.max(...data, 0);
+  const min = Math.min(...data, 0);
+  const range = max - min || 1;
+  const y = (value: number) => height - ((value - min) / range) * (height - 4) - 2;
+
+  if (variant === 'bar') {
+    const slot = width / data.length;
+    const barW = Math.max(1.5, slot * 0.6);
+    const zeroY = y(0);
+    return (
+      <svg className="sparkline" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-hidden>
+        {data.map((value, index) => {
+          const cx = index * slot + slot / 2;
+          const vy = y(value);
+          const top = Math.min(vy, zeroY);
+          const h = Math.max(1, Math.abs(zeroY - vy));
+          return <rect key={index} x={cx - barW / 2} y={top} width={barW} height={h} rx={1} fill={color} opacity={0.85} />;
+        })}
+      </svg>
+    );
+  }
+
+  const stepX = data.length > 1 ? width / (data.length - 1) : width;
+  const points = data.map((value, index) => `${index * stepX},${y(value)}`).join(' ');
+  return (
+    <svg className="sparkline" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-hidden>
+      <polyline points={points} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 export default function App() {
   return (
@@ -98,7 +142,7 @@ function AppShell() {
     return (
       <main className="auth-page">
         <div className="auth-card">
-          <span className="brand-mark large">₹</span>
+          <span className="brand-mark large"><BrandGlyph /></span>
           <h1>Loading your money…</h1>
           <div className="auth-spinner" aria-hidden />
         </div>
@@ -110,7 +154,7 @@ function AppShell() {
     return (
       <main className="auth-page">
         <div className="auth-card">
-          <span className="brand-mark large">₹</span>
+          <span className="brand-mark large"><BrandGlyph /></span>
           <h1>Could not load data</h1>
           <p className="status error">{ledger.message}</p>
           <button className="primary" onClick={() => void ledger.refresh()}>
@@ -258,9 +302,8 @@ function MobileTabBar() {
           className={ledger.mainTab === item.id ? 'tab active' : 'tab'}
           onClick={() => ledger.setMainTab(item.id)}
           aria-current={ledger.mainTab === item.id ? 'page' : undefined}
-          style={{ ['--ico-tint' as string]: item.tint }}
         >
-          <span className="tab-ico">{item.icon}</span>
+          <span className="tab-ico"><NavIcon id={item.id} /></span>
           <span className="tab-label">{item.shortLabel ?? item.label}</span>
         </button>
       ))}
@@ -274,20 +317,85 @@ function ThemeToggle() {
   return (
     <button
       type="button"
-      className="theme-toggle"
-      role="switch"
-      aria-checked={isDark}
+      className={`theme-btn ${isDark ? 'dark' : 'light'}`}
       aria-label={isDark ? 'Switch to light theme' : 'Switch to dark theme'}
       title={isDark ? 'Switch to light theme' : 'Switch to dark theme'}
       onClick={toggleTheme}
     >
-      <span className="theme-toggle-track">
-        <span className="theme-toggle-ico sun">☀️</span>
-        <span className="theme-toggle-ico moon">🌙</span>
-        <span className="theme-toggle-knob" />
-      </span>
+      <span aria-hidden>{isDark ? '🌙' : '☀️'}</span>
     </button>
   );
+}
+
+/** Brand logo glyph (white bars on the accent tile) — crisp in light + dark. */
+function BrandGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" width="58%" height="58%" fill="none" aria-hidden>
+      <rect x="4" y="12" width="4" height="7" rx="1.4" fill="#fff" />
+      <rect x="10" y="7" width="4" height="12" rx="1.4" fill="#fff" />
+      <rect x="16" y="10" width="4" height="9" rx="1.4" fill="#fff" />
+    </svg>
+  );
+}
+
+/** Clean line-style navigation icons (replaces the tinted emoji badges). */
+function NavIcon({ id }: { id: string }) {
+  const p = {
+    width: 20,
+    height: 20,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.8,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const
+  };
+  switch (id) {
+    case 'trans':
+      return (
+        <svg {...p}>
+          <path d="M17 6H6l3-3" />
+          <path d="M17 6l-3 3" />
+          <path d="M7 18h11l-3 3" />
+          <path d="M7 18l3-3" />
+        </svg>
+      );
+    case 'stats':
+      return (
+        <svg {...p}>
+          <path d="M4 20h16" />
+          <path d="M6 20v-6" />
+          <path d="M12 20V6" />
+          <path d="M18 20v-9" />
+        </svg>
+      );
+    case 'categories':
+      return (
+        <svg {...p}>
+          <rect x="3" y="3" width="7" height="7" rx="1.6" />
+          <rect x="14" y="3" width="7" height="7" rx="1.6" />
+          <rect x="3" y="14" width="7" height="7" rx="1.6" />
+          <rect x="14" y="14" width="7" height="7" rx="1.6" />
+        </svg>
+      );
+    case 'accounts':
+      return (
+        <svg {...p}>
+          <path d="M3 10l9-6 9 6" />
+          <path d="M5 10v9M9 10v9M15 10v9M19 10v9" />
+          <path d="M3 21h18" />
+        </svg>
+      );
+    case 'more':
+      return (
+        <svg {...p}>
+          <circle cx="12" cy="12" r="9" />
+          <circle cx="12" cy="12" r="4.5" />
+        </svg>
+      );
+    default:
+      return null;
+  }
 }
 
 function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
@@ -296,7 +404,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
       <div className="brand">
-        <span className="brand-mark">₹</span>
+        <span className="brand-mark"><BrandGlyph /></span>
         <div className="brand-text">
           <strong>Money Sheets</strong>
           <span>Personal finance</span>
@@ -311,10 +419,9 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
               key={item.id}
               className={ledger.mainTab === item.id ? 'side-link active' : 'side-link'}
               onClick={() => ledger.setMainTab(item.id)}
-              style={{ ['--ico-tint' as string]: item.tint }}
               title={collapsed ? item.label : undefined}
             >
-              <span className="nav-ico">{item.icon}</span>
+              <span className="nav-ico"><NavIcon id={item.id} /></span>
               <span className="side-link-text">{item.label}</span>
             </button>
           ))}
@@ -401,12 +508,49 @@ function MonthNav() {
   );
 }
 
+/** `YYYY-MM-DD` -> `DD/MM/YYYY` for display in the typed date field. */
+function toDisplayDate(value: string): string {
+  if (!value) return '';
+  const [year, month, day] = value.split('-');
+  if (!year || !month || !day) return '';
+  return `${day}/${month}/${year}`;
+}
+
+/** Format raw typing into `DD/MM/YYYY`, auto-inserting the `/` delimiters. */
+function formatTypedDate(text: string): string {
+  const digits = text.replace(/\D/g, '').slice(0, 8);
+  const parts = [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)].filter(Boolean);
+  return parts.join('/');
+}
+
+/** Parse a `DD/MM/YYYY` string to a stored `YYYY-MM-DD` key, or null when invalid. */
+function parseTypedDate(text: string): string | null {
+  const digits = text.replace(/\D/g, '');
+  if (digits.length !== 8) return null;
+  const dd = digits.slice(0, 2);
+  const mm = digits.slice(2, 4);
+  const yyyy = digits.slice(4, 8);
+  const day = Number(dd);
+  const month = Number(mm);
+  const year = Number(yyyy);
+  if (year < 1 || month < 1 || month > 12) return null;
+  const daysInThatMonth = new Date(year, month, 0).getDate();
+  if (day < 1 || day > daysInThatMonth) return null;
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 function DatePickerField({ value, onChange }: { value: string; onChange: (date: string) => void }) {
   const [open, setOpen] = useState(false);
+  const [text, setText] = useState(() => toDisplayDate(value));
   const ref = useRef<HTMLDivElement>(null);
   const parsed = value ? new Date(`${value}T12:00:00`) : new Date();
   const [viewYear, setViewYear] = useState(parsed.getFullYear());
   const [viewMonth, setViewMonth] = useState(parsed.getMonth());
+
+  // Keep the text field in sync when the value changes externally (calendar pick, edit).
+  useEffect(() => {
+    setText(toDisplayDate(value));
+  }, [value]);
 
   useEffect(() => {
     if (open) {
@@ -426,7 +570,6 @@ function DatePickerField({ value, onChange }: { value: string; onChange: (date: 
   }, [open]);
 
   const days = buildCalendarMonth([], viewYear, viewMonth);
-  const label = parsed.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 
   function shiftMonth(delta: number) {
     const next = new Date(viewYear, viewMonth + delta, 1);
@@ -434,13 +577,42 @@ function DatePickerField({ value, onChange }: { value: string; onChange: (date: 
     setViewMonth(next.getMonth());
   }
 
+  function handleType(raw: string) {
+    const formatted = formatTypedDate(raw);
+    setText(formatted);
+    const iso = parseTypedDate(formatted);
+    if (iso) onChange(iso);
+  }
+
+  function handleBlur() {
+    // Revert incomplete/invalid text back to the last valid value.
+    if (parseTypedDate(text) === null) setText(toDisplayDate(value));
+  }
+
   return (
     <div className={`date-field ${open ? 'open' : ''}`} ref={ref}>
-      <button type="button" className="date-field-btn" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+      <div className="date-field-row">
         <span className="date-field-icon" aria-hidden>📅</span>
-        <span className="date-field-text">{label}</span>
-        <span className="date-field-caret">▾</span>
-      </button>
+        <input
+          className="date-field-input"
+          type="text"
+          inputMode="numeric"
+          placeholder="DD/MM/YYYY"
+          value={text}
+          onChange={(e) => handleType(e.target.value)}
+          onBlur={handleBlur}
+          aria-label="Date (day / month / year)"
+        />
+        <button
+          type="button"
+          className="date-field-toggle"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-label="Open calendar"
+        >
+          <span className="date-field-caret">▾</span>
+        </button>
+      </div>
       {open ? (
         <div className="date-pop">
           <div className="date-pop-head">
@@ -463,9 +635,6 @@ function DatePickerField({ value, onChange }: { value: string; onChange: (date: 
               </button>
             ))}
           </div>
-          <div className="date-pop-foot">
-            <button type="button" className="link accent" onClick={() => { onChange(todayKey()); setOpen(false); }}>Today</button>
-          </div>
         </div>
       ) : null}
     </div>
@@ -486,6 +655,7 @@ function DayTransactionsModal({
   deleteTransaction: (t: Transaction) => void;
 }) {
   const { addTransactionOn } = useLedger();
+  useEscToClose(onClose);
   const rows = transactions.filter((t) => !t.deleted && t.date === date).sort((a, b) => b.amount - a.amount);
   const income = rows.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const expense = rows.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
@@ -543,24 +713,74 @@ function DayTransactionsModal({
   );
 }
 
-function SummaryStrip({ income, expense, balance, count, note }: { income: number; expense: number; balance: number; count: number; note?: string }) {
+function DashboardCards({
+  income,
+  expense,
+  balance,
+  count,
+  incomeSeries,
+  expenseSeries,
+  netSeries,
+  averageDaily,
+  avgPctChange
+}: {
+  income: number;
+  expense: number;
+  balance: number;
+  count: number;
+  incomeSeries: number[];
+  expenseSeries: number[];
+  netSeries: number[];
+  averageDaily: number;
+  avgPctChange: number;
+}) {
+  const up = avgPctChange >= 0;
   return (
-    <div className="summary-strip">
-      <div className="summary-tile income">
-        <div className="tile-top"><span>Income</span><span className="tile-ico">▲</span></div>
+    <div className="summary-cards">
+      <div className="summary-card income">
+        <div className="sc-head"><span>Income</span><span className="sc-ico">↗</span></div>
         <strong>{formatMoney(income)}</strong>
+        <small>This month</small>
+        <div className="sc-chart"><Sparkline values={incomeSeries} color="var(--income)" /></div>
       </div>
-      <div className="summary-tile expense">
-        <div className="tile-top"><span>Expense</span><span className="tile-ico">▼</span></div>
+      <div className="summary-card expense">
+        <div className="sc-head"><span>Expense</span><span className="sc-ico">↘</span></div>
         <strong>{formatMoney(expense)}</strong>
+        <small>This month</small>
+        <div className="sc-chart"><Sparkline values={expenseSeries} color="var(--expense)" /></div>
       </div>
-      <div className="summary-tile balance">
-        <div className="tile-top"><span>Balance</span><span className="tile-ico">＝</span></div>
+      <div className="summary-card balance">
+        <div className="sc-head"><span>Balance</span><span className="sc-ico">👛</span></div>
         <strong>{formatMoney(balance)}</strong>
-        <small>{note ?? `${count} transaction${count === 1 ? '' : 's'}`}</small>
+        <small>This month</small>
+        <small className="sc-sub">{count} transaction{count === 1 ? '' : 's'}</small>
+      </div>
+      <div className="summary-card average">
+        <div className="sc-head"><span>Average Daily</span><span className="sc-ico">📊</span></div>
+        <strong>{formatMoney(averageDaily)}</strong>
+        <small>
+          vs last month <span className={up ? 'sc-delta up' : 'sc-delta down'}>{up ? '▲' : '▼'} {Math.abs(avgPctChange).toFixed(1)}%</span>
+        </small>
+        <div className="sc-chart"><Sparkline values={netSeries} color="var(--accent)" variant="bar" /></div>
       </div>
     </div>
   );
+}
+
+/** Keep only the first `limit` transactions across date groups (for the recent list). */
+function limitGroups(
+  groups: ReturnType<typeof groupTransactionsByDate>,
+  limit: number
+): ReturnType<typeof groupTransactionsByDate> {
+  const result: ReturnType<typeof groupTransactionsByDate> = [];
+  let remaining = limit;
+  for (const group of groups) {
+    if (remaining <= 0) break;
+    const items = group.items.slice(0, remaining);
+    remaining -= items.length;
+    result.push({ ...group, items });
+  }
+  return result;
 }
 
 function TransView() {
@@ -569,159 +789,245 @@ function TransView() {
     accounts,
     carryForward,
     filters,
-    homeView,
     selectedMonth,
-    setHomeView,
+    setSelectedMonth,
     setFilters,
     startEdit,
     deleteTransaction
   } = useLedger();
 
   const [dayPopup, setDayPopup] = useState<string | null>(null);
+  const [duration, setDuration] = useState<'all' | 'currentMonth'>('currentMonth');
+  const [showFilters, setShowFilters] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+
+  // Keep the Recent transactions column no taller than the left column
+  // (Calendar + Top categories), so both columns finish at the same height.
+  const leftColRef = useRef<HTMLDivElement>(null);
+  const [leftColHeight, setLeftColHeight] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const el = leftColRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => setLeftColHeight(el.offsetHeight));
+    ro.observe(el);
+    setLeftColHeight(el.offsetHeight);
+    return () => ro.disconnect();
+  }, []);
 
   const month = monthKey(selectedMonth);
   const monthSummary = summarizeMonth(transactions, month);
-  const weekSummary = summarizeWeek(transactions);
-  const monthTransactions = transactionsInMonth(transactions, month);
-  const filtered = filterTransactions(monthTransactions, filters);
-  const groups = groupTransactionsByDate(filtered);
+  const series = dailySeries(transactions, month);
+  const avgStats = averageDailyStats(transactions, month);
+
+  const scoped = duration === 'currentMonth' ? transactionsInMonth(transactions, month) : transactions;
+  const filtered = filterTransactions(scoped, filters);
+  const allGroups = groupTransactionsByDate(filtered);
+  const totalCount = filtered.length;
+  const groups = showAll ? allGroups : limitGroups(allGroups, RECENT_LIMIT);
+
   const calendarDays = buildCalendarMonth(transactions, selectedMonth.getFullYear(), selectedMonth.getMonth());
   const expenseBreakdown = summarizeByCategory(transactions, month, 'expense');
 
   const broughtForward = carryForward ? carryOverBalance(accounts, transactions, month, true) : 0;
   const monthBalance = monthSummary.balance + broughtForward;
-  const summary = homeView === 'weekly' ? weekSummary : monthSummary;
-  const displayBalance = homeView === 'weekly' ? weekSummary.balance : monthBalance;
   const today = todayKey();
+
+  const filtersActive =
+    (filters.type && filters.type !== 'all') || duration !== 'currentMonth' || Boolean(filters.search?.trim());
 
   return (
     <div className="stack">
-      <div className="view-bar">
-        <div className="pill-row">
-          {HOME_VIEWS.map((view) => (
-            <button
-              key={view.id}
-              className={homeView === view.id ? 'pill active' : 'pill'}
-              onClick={() => setHomeView(view.id)}
-            >
-              {view.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <SummaryStrip
-        income={summary.income}
-        expense={summary.expense}
-        balance={displayBalance}
-        count={summary.count}
-        note={carryForward && homeView !== 'weekly' ? `Incl. ${formatMoney(broughtForward)} brought forward` : undefined}
+      <DashboardCards
+        income={monthSummary.income}
+        expense={monthSummary.expense}
+        balance={monthBalance}
+        count={monthSummary.count}
+        incomeSeries={series.income}
+        expenseSeries={series.expense}
+        netSeries={series.net}
+        averageDaily={avgStats.averageDaily}
+        avgPctChange={avgStats.pctChange}
       />
 
-      <div className="split">
-        <div className="panel">
-          {homeView === 'calendar' ? (
-            <>
+      <div className="dashboard-grid">
+        <div className="dashboard-left" ref={leftColRef}>
+          <div className="panel">
+            <div className="panel-head cal-head">
               <h3>Calendar</h3>
-              <div className="calendar-weekdays">
-                {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => <span key={`${d}${i}`}>{d}</span>)}
+              <div className="cal-nav">
+                <button
+                  className="nav-btn sm"
+                  aria-label="Previous month"
+                  onClick={() => setSelectedMonth(new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() - 1, 1))}
+                >
+                  ‹
+                </button>
+                <strong>{monthTitle(selectedMonth.getFullYear(), selectedMonth.getMonth())}</strong>
+                <button
+                  className="nav-btn sm"
+                  aria-label="Next month"
+                  onClick={() => setSelectedMonth(new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 1))}
+                >
+                  ›
+                </button>
               </div>
-              <div className="calendar-grid">
-                {calendarDays.map((day) => (
-                  <button
-                    type="button"
-                    key={day.date}
-                    className={`calendar-cell btn ${day.inMonth ? '' : 'muted'} ${day.count ? 'has-data' : ''} ${day.date === today ? 'today' : ''}`}
-                    onClick={() => setDayPopup(day.date)}
-                    title={day.count ? `${day.count} transaction${day.count === 1 ? '' : 's'}` : 'View day'}
-                  >
-                    <strong>{day.day}</strong>
-                    {day.expense > 0 ? <em className="expense">-{day.expense.toFixed(0)}</em> : null}
-                    {day.income > 0 ? <em className="income">+{day.income.toFixed(0)}</em> : null}
-                  </button>
-                ))}
+            </div>
+            <div className="calendar-weekdays">
+              {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => <span key={`${d}${i}`}>{d}</span>)}
+            </div>
+            <div className="calendar-grid">
+              {calendarDays.map((day) => (
+                <button
+                  type="button"
+                  key={day.date}
+                  className={`calendar-cell btn ${day.inMonth ? '' : 'muted'} ${day.count ? 'has-data' : ''} ${day.date === today ? 'today' : ''}`}
+                  onClick={() => setDayPopup(day.date)}
+                  title={day.count ? `${day.count} transaction${day.count === 1 ? '' : 's'}` : 'View day'}
+                >
+                  <strong>{day.day}</strong>
+                  {day.expense > 0 ? <em className="expense">-{day.expense.toFixed(0)}</em> : null}
+                  {day.income > 0 ? <em className="income">+{day.income.toFixed(0)}</em> : null}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="panel">
+            <h3>Top categories this month</h3>
+            {expenseBreakdown.length === 0 ? (
+              <p className="muted">No expenses yet.</p>
+            ) : (
+              <div className="top-cats">
+                {expenseBreakdown.slice(0, 6).map((row) => {
+                  const meta = getCategoryMeta(row.category);
+                  return (
+                    <div className="top-cat" key={row.category}>
+                      <span className="tc-ico" style={{ backgroundColor: `${meta.color}22`, color: meta.color }}>{meta.emoji}</span>
+                      <span className="tc-name">{row.category}</span>
+                      <div className="tc-bar">
+                        <div className="tc-fill" style={{ width: `${Math.max(row.percent, 2)}%`, backgroundColor: meta.color }} />
+                      </div>
+                      <span className="tc-pct">{row.percent.toFixed(0)}%</span>
+                      <strong className="tc-amt">{formatMoney(row.amount)}</strong>
+                    </div>
+                  );
+                })}
               </div>
-            </>
-          ) : null}
-
-          {homeView === 'summary' ? (
-            <>
-              <h3>Top spending</h3>
-              {expenseBreakdown.length === 0 ? (
-                <p className="muted">No expenses yet.</p>
-              ) : (
-                <ul className="mini-list">
-                  {expenseBreakdown.slice(0, 6).map((row) => (
-                    <li key={row.category}>
-                      <span>{getCategoryMeta(row.category).emoji} {row.category}</span>
-                      <strong>{formatMoney(row.amount)}</strong>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </>
-          ) : null}
-        </div>
-
-        <div className="trans-right">
-        <div className="panel filter-panel">
-          <h3>Filters</h3>
-          <div className="filter-grid">
-            <select value={filters.type ?? 'all'} onChange={(e) => setFilters({ ...filters, type: e.target.value as typeof filters.type })}>
-              <option value="all">All types</option>
-              <option value="income">Income</option>
-              <option value="expense">Expense</option>
-            </select>
-            <input placeholder="Search…" value={filters.search ?? ''} onChange={(e) => setFilters({ ...filters, search: e.target.value })} />
+            )}
           </div>
         </div>
 
-        <div className="panel list-panel">
-          <h3>Records</h3>
-          {groups.length === 0 ? (
-            <div className="empty">
-              <span className="emoji">🧾</span>
-              <strong>No transactions yet</strong>
-              <span className="muted">Tap “Add record” to log your first entry.</span>
+        <div
+          className="dashboard-right"
+          style={leftColHeight ? ({ ['--left-col-h' as string]: `${leftColHeight}px` }) : undefined}
+        >
+          <div className="filter-bar">
+            <select
+              className="filter-type"
+              value={filters.type ?? 'all'}
+              onChange={(e) => setFilters({ ...filters, type: e.target.value as typeof filters.type })}
+            >
+              <option value="all">All categories</option>
+              <option value="income">Income</option>
+              <option value="expense">Expense</option>
+            </select>
+            <div className="filter-search">
+              <span className="fs-ico" aria-hidden>🔍</span>
+              <input placeholder="Search transactions…" value={filters.search ?? ''} onChange={(e) => setFilters({ ...filters, search: e.target.value })} />
+            </div>
+            <button
+              type="button"
+              className={`filter-btn ${showFilters ? 'active' : ''}`}
+              onClick={() => setShowFilters((s) => !s)}
+              aria-expanded={showFilters}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M3 5h18l-7 8v5l-4 2v-7z" />
+              </svg>
+              Filters
+              {filtersActive ? <span className="filter-dot" aria-hidden /> : null}
+            </button>
+          </div>
+
+          {showFilters ? (
+            <div className="panel filter-extra">
+              <span className="fe-label">Duration</span>
+              <div className="radio-row">
+                {(['all', 'currentMonth'] as const).map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    className={`radio-pill ${duration === d ? 'active' : ''}`}
+                    onClick={() => setDuration(d)}
+                  >
+                    <span className="radio-dot" aria-hidden />
+                    {d === 'all' ? 'All' : 'Current month'}
+                  </button>
+                ))}
+              </div>
             </div>
           ) : null}
-          {groups.map((group) => {
-            const net = group.items.reduce((sum, t) => sum + (t.type === 'income' ? t.amount : -t.amount), 0);
-            return (
-              <section key={group.date} className="txn-group">
-                <div className="txn-group-head">
-                  <div className="txn-date">
-                    <span className="txn-day">{group.parts.day}</span>
-                    <div className="txn-date-meta">
-                      <strong>{group.parts.relative ?? group.parts.weekday}</strong>
-                      <span>{group.parts.relative ? `${group.parts.weekday} · ${group.parts.dateText}` : group.parts.dateText}</span>
+
+          <div className="panel recent-panel">
+            <div className="panel-head">
+              <h3>Recent transactions</h3>
+              {totalCount > RECENT_LIMIT ? (
+                <button type="button" className="link accent" onClick={() => setShowAll((s) => !s)}>
+                  {showAll ? 'Show less' : 'View all'}
+                </button>
+              ) : null}
+            </div>
+            <div className="recent-scroll">
+            {groups.length === 0 ? (
+              <div className="empty">
+                <span className="emoji">🧾</span>
+                <strong>No transactions yet</strong>
+                <span className="muted">Tap “Add record” to log your first entry.</span>
+              </div>
+            ) : null}
+            {groups.map((group) => {
+              const net = group.items.reduce((sum, t) => sum + (t.type === 'income' ? t.amount : -t.amount), 0);
+              return (
+                <section key={group.date} className="txn-group">
+                  <div className="txn-group-head">
+                    <div className="txn-date">
+                      <span className="txn-day">{group.parts.day}</span>
+                      <div className="txn-date-meta">
+                        <strong>{group.parts.relative ?? group.parts.weekday}</strong>
+                        <span>{group.parts.relative ? `${group.parts.weekday} · ${group.parts.dateText}` : group.parts.dateText}</span>
+                      </div>
                     </div>
+                    <span className="day-net">{net >= 0 ? '+' : '-'}{formatMoney(Math.abs(net))}</span>
                   </div>
-                  <span className="day-net">{net >= 0 ? '+' : '-'}{formatMoney(Math.abs(net))}</span>
-                </div>
-                {group.items.map((txn) => {
-                  const meta = getCategoryMeta(txn.category);
-                  return (
-                    <article className="txn-row" key={txn.id}>
-                      <span className="cat-icon" style={{ backgroundColor: `${meta.color}22`, color: meta.color }}>{meta.emoji}</span>
-                      <div className="txn-body">
-                        <strong>{txn.category}</strong>
-                        <span>{txn.account}{txn.note ? ` · ${txn.note}` : ''}</span>
-                      </div>
-                      <div className="txn-end">
-                        <em className={txn.type}>{formatSignedMoney(txn.amount, txn.type, txn.currency)}</em>
-                        <div className="txn-actions">
-                          <button className="icon-btn tip" data-tip="Edit" aria-label="Edit record" onClick={() => startEdit(txn)}>✏️</button>
-                          <button className="icon-btn tip danger" data-tip="Delete record" aria-label="Delete record" onClick={() => void deleteTransaction(txn)}>🗑</button>
+                  {group.items.map((txn) => {
+                    const meta = getCategoryMeta(txn.category);
+                    return (
+                      <article className="txn-row" key={txn.id}>
+                        <span className="cat-icon" style={{ backgroundColor: `${meta.color}22`, color: meta.color }}>{meta.emoji}</span>
+                        <div className="txn-body">
+                          <strong>{txn.category}</strong>
+                          <span>{txn.account}{txn.note ? ` · ${txn.note}` : ''}</span>
                         </div>
-                      </div>
-                    </article>
-                  );
-                })}
-              </section>
-            );
-          })}
-        </div>
+                        <div className="txn-end">
+                          <em className={txn.type}>{formatSignedMoney(txn.amount, txn.type, txn.currency)}</em>
+                          <div className="txn-actions">
+                            <button className="icon-btn tip" data-tip="Edit" aria-label="Edit record" onClick={() => startEdit(txn)}>✏️</button>
+                            <button className="icon-btn tip danger" data-tip="Delete record" aria-label="Delete record" onClick={() => void deleteTransaction(txn)}>🗑</button>
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </section>
+              );
+            })}
+            </div>
+            {totalCount > RECENT_LIMIT && !showAll ? (
+              <button type="button" className="view-all-btn" onClick={() => setShowAll(true)}>
+                View all transactions ⌄
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -1614,13 +1920,16 @@ function MoreView() {
   const expenseCategories = categories.filter((c) => c.active && c.type === 'expense');
 
   return (
-    <div className="stack">
-      <StorageSettingsPanel />
+    <div className="more-grid">
+      <div className="more-col">
+        <StorageSettingsPanel />
 
-      <SyncOtherDevicesPanel />
+        <SyncOtherDevicesPanel />
 
-      <SettingsPanel />
+        <SettingsPanel />
+      </div>
 
+      <div className="more-col">
       <ManagePanel />
 
       <BudgetForm categories={expenseCategories.map((c) => c.name)} onSave={saveBudget} month={month} />
@@ -1677,6 +1986,7 @@ function MoreView() {
       </div>
 
       <FeedbackPanel />
+      </div>
     </div>
   );
 }
@@ -1717,6 +2027,7 @@ function FeedbackPanel() {
 
 function ConfirmDialog() {
   const { confirmDialog, answerConfirm } = useLedger();
+  useEscToClose(() => answerConfirm(false), Boolean(confirmDialog));
   if (!confirmDialog) return null;
 
   const tone = confirmDialog.tone ?? 'default';
@@ -2295,12 +2606,65 @@ function BudgetForm({
   );
 }
 
+/** Description input with auto-suggestions sourced from prior notes across all months. */
+function DescriptionField({
+  value,
+  onChange,
+  transactions
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  transactions: Transaction[];
+}) {
+  const [focused, setFocused] = useState(false);
+  const query = value.trim().toLowerCase();
+  const suggestions = query
+    ? Array.from(
+        new Set(
+          transactions
+            .filter((t) => !t.deleted && t.note && t.note.toLowerCase().includes(query) && t.note.trim().toLowerCase() !== query)
+            .map((t) => t.note.trim())
+        )
+      ).slice(0, 6)
+    : [];
+
+  return (
+    <div className="desc-field">
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => window.setTimeout(() => setFocused(false), 120)}
+        placeholder="Optional description"
+      />
+      {focused && suggestions.length > 0 ? (
+        <div className="desc-suggest">
+          {suggestions.map((s) => (
+            <button
+              type="button"
+              key={s}
+              className="desc-suggest-item"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onChange(s);
+              }}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function AddModal() {
   const {
     form,
     setForm,
     categories,
     accounts,
+    transactions,
     editingId,
     busy,
     saveTransaction,
@@ -2308,6 +2672,7 @@ function AddModal() {
   } = useLedger();
 
   const [showCalc, setShowCalc] = useState(false);
+  useEscToClose(cancelEdit);
 
   const expenseCategories = categories.filter((c) => c.active && c.type === 'expense');
   const incomeCategories = categories.filter((c) => c.active && c.type === 'income');
@@ -2417,8 +2782,12 @@ function AddModal() {
         </div>
 
         <div className="field-group">
-          <label>Memo</label>
-          <textarea value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="Optional note" />
+          <label>Description</label>
+          <DescriptionField
+            value={form.note}
+            onChange={(note) => setForm({ ...form, note })}
+            transactions={transactions}
+          />
         </div>
 
         <div className="field-group">

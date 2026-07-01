@@ -64,7 +64,7 @@ export function DatePicker({
                     styles.cell,
                     !day.inMonth && { opacity: 0.32 },
                     selected && { backgroundColor: c.accent },
-                    !selected && isToday && { borderColor: c.accent, borderWidth: 1 }
+                    !selected && isToday && { borderColor: c.warn, borderWidth: 1.5, backgroundColor: `${c.warn}22` }
                   ]}
                   onPress={() => {
                     onSelect(day.date);

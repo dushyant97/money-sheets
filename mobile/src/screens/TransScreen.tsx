@@ -6,6 +6,7 @@ import {
   activeTransactions,
   buildCalendarMonth,
   carryOverBalance,
+  dailySeries,
   dateKey,
   filterTransactions,
   monthKey,
@@ -23,16 +24,21 @@ import { useLedger } from '../context/LedgerContext';
 
 const HOME_VIEWS = [
   { id: 'calendar' as const, label: 'Calendar' },
-  { id: 'weekly' as const, label: 'Weekly' },
-  { id: 'monthly' as const, label: 'Monthly' },
   { id: 'summary' as const, label: 'Summary' }
 ];
 
 const TYPE_FILTERS: Array<{ id: TransactionType | 'all'; label: string }> = [
-  { id: 'all', label: 'All' },
+  { id: 'all', label: 'All categories' },
   { id: 'income', label: 'Income' },
   { id: 'expense', label: 'Expense' }
 ];
+
+const DURATIONS = [
+  { id: 'all' as const, label: 'All' },
+  { id: 'currentMonth' as const, label: 'Current month' }
+];
+
+const RECENT_LIMIT = 8;
 
 export function TransScreen() {
   const { palette: c } = useTheme();
@@ -50,14 +56,22 @@ export function TransScreen() {
   } = useLedger();
 
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [duration, setDuration] = useState<'all' | 'currentMonth'>('currentMonth');
+  const [showAll, setShowAll] = useState(false);
   const month = monthKey(selectedMonth);
 
   const monthSummary = useMemo(() => summarizeMonth(transactions, month), [transactions, month]);
   const weekSummary = useMemo(() => summarizeWeek(transactions), [transactions]);
-  const filtered = useMemo(
-    () => filterTransactions(transactionsInMonth(transactions, month), filters),
-    [transactions, month, filters]
+  const series = useMemo(() => dailySeries(transactions, month), [transactions, month]);
+  const filtered = useMemo(() => {
+    const scoped = duration === 'currentMonth' ? transactionsInMonth(transactions, month) : transactions;
+    return filterTransactions(scoped, filters);
+  }, [transactions, month, filters, duration]);
+  const sortedFiltered = useMemo(
+    () => [...filtered].sort((a, b) => b.date.localeCompare(a.date)),
+    [filtered]
   );
+  const visibleTransactions = showAll ? sortedFiltered : sortedFiltered.slice(0, RECENT_LIMIT);
   const broughtForward = useMemo(
     () => (carryForward ? carryOverBalance(accounts, transactions, month, true) : 0),
     [accounts, transactions, month, carryForward]
@@ -82,6 +96,9 @@ export function TransScreen() {
         income={homeView === 'weekly' ? weekSummary.income : monthSummary.income}
         expense={homeView === 'weekly' ? weekSummary.expense : monthSummary.expense}
         balance={homeView === 'weekly' ? weekSummary.balance : monthSummary.balance + broughtForward}
+        count={monthSummary.count}
+        incomeSeries={series.income}
+        expenseSeries={series.expense}
       />
       {carryForward && homeView !== 'weekly' && broughtForward !== 0 ? (
         <Text style={[styles.carryNote, { color: c.textDim }]}>
@@ -173,9 +190,36 @@ export function TransScreen() {
           placeholderTextColor={c.textDim}
           autoCapitalize="none"
         />
+        <Text style={[styles.cardLabel, { color: c.textDim, marginTop: 4 }]}>DURATION</Text>
+        <View style={styles.typeRow}>
+          {DURATIONS.map((option) => {
+            const active = duration === option.id;
+            return (
+              <TouchableOpacity
+                key={option.id}
+                style={[
+                  styles.typePill,
+                  { backgroundColor: c.surface2, borderColor: 'transparent' },
+                  active && { backgroundColor: c.accentSoft, borderColor: c.accent }
+                ]}
+                onPress={() => setDuration(option.id)}
+              >
+                <Text style={[styles.typePillText, { color: active ? c.accentText : c.textMuted }]}>{option.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
 
-      <TransactionList transactions={filtered} onEdit={startEdit} onDelete={(t) => void deleteTransaction(t)} />
+      <View style={styles.recentHead}>
+        <Text style={[styles.cardLabel, { color: c.textDim }]}>RECENT TRANSACTIONS</Text>
+        {sortedFiltered.length > RECENT_LIMIT ? (
+          <TouchableOpacity onPress={() => setShowAll((s) => !s)}>
+            <Text style={[styles.viewAll, { color: c.accentText }]}>{showAll ? 'Show less' : 'View all'}</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+      <TransactionList transactions={visibleTransactions} onEdit={startEdit} onDelete={(t) => void deleteTransaction(t)} />
 
       <DayTransactionsModal
         date={selectedDay}
@@ -218,5 +262,7 @@ const styles = StyleSheet.create({
   typePill: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: radius.pill, borderWidth: 1 },
   typePillText: { fontSize: 12, fontWeight: '700' },
   search: { borderRadius: radius.md, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10 },
-  carryNote: { fontSize: 11, textAlign: 'center', marginTop: -8 }
+  carryNote: { fontSize: 11, textAlign: 'center', marginTop: -8 },
+  recentHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4, marginTop: 2 },
+  viewAll: { fontSize: 12, fontWeight: '800' }
 });

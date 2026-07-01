@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { EXPORT_FILENAME, canPickSaveLocation, type ExportDestination } from '../spreadsheet';
+import { useEscToClose } from '../hooks/useEscToClose';
 
 /**
  * Asks the user where to write the exported workbook:
@@ -19,6 +20,7 @@ export function ExportOptionsModal({
 }) {
   const supportsPicker = canPickSaveLocation();
   const [error, setError] = useState<string | null>(null);
+  useEscToClose(onCancel);
 
   async function chooseLocation() {
     setError(null);

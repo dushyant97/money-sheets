@@ -13,6 +13,8 @@ import {
   summarizeMonth,
   summarizeWeek,
   transactionsInMonth,
+  dailySeries,
+  averageDailyStats,
   dateKey
 } from '../../shared/finance';
 import type { TrendGranularity } from '../../shared/finance';
@@ -1423,6 +1425,8 @@ export {
   computeAccountBalances,
   carryOverBalance,
   transactionsInMonth,
+  dailySeries,
+  averageDailyStats,
   budgetProgressForMonth,
   filterTransactions
 };

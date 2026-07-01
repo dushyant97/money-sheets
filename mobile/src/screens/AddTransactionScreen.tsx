@@ -11,16 +11,48 @@ import {
   View
 } from 'react-native';
 import { radius, type ThemePalette } from '../../../shared/theme';
-import { dateLabelParts, getCategoryMeta } from '../../../shared/uiHelpers';
+import { getCategoryMeta } from '../../../shared/uiHelpers';
 import { Calculator } from '../components/Calculator';
 import { DatePicker } from '../components/DatePicker';
 import { useTheme } from '../theme/ThemeProvider';
 import { useLedger } from '../context/LedgerContext';
 
+/** `YYYY-MM-DD` -> `DD/MM/YYYY` for the typed date field. */
+function toDisplayDate(value: string): string {
+  if (!value) return '';
+  const [year, month, day] = value.split('-');
+  if (!year || !month || !day) return '';
+  return `${day}/${month}/${year}`;
+}
+
+/** Format raw typing into `DD/MM/YYYY`, auto-inserting the `/` delimiters. */
+function formatTypedDate(text: string): string {
+  const digits = text.replace(/\D/g, '').slice(0, 8);
+  const parts = [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)].filter(Boolean);
+  return parts.join('/');
+}
+
+/** Parse a `DD/MM/YYYY` string to a stored `YYYY-MM-DD` key, or null when invalid. */
+function parseTypedDate(text: string): string | null {
+  const digits = text.replace(/\D/g, '');
+  if (digits.length !== 8) return null;
+  const dd = digits.slice(0, 2);
+  const mm = digits.slice(2, 4);
+  const yyyy = digits.slice(4, 8);
+  const day = Number(dd);
+  const month = Number(mm);
+  const year = Number(yyyy);
+  if (year < 1 || month < 1 || month > 12) return null;
+  const daysInThatMonth = new Date(year, month, 0).getDate();
+  if (day < 1 || day > daysInThatMonth) return null;
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 export function AddTransactionScreen() {
   const { palette: c } = useTheme();
   const styles = useMemo(() => makeStyles(c), [c]);
-  const { showAdd, editingId, form, categories, accounts, busy, setForm, saveTransaction, cancelEdit } = useLedger();
+  const { showAdd, editingId, form, categories, accounts, transactions, busy, setForm, saveTransaction, cancelEdit } =
+    useLedger();
 
   const expenseCategories = categories.filter((category) => category.active && category.type === 'expense');
   const incomeCategories = categories.filter((category) => category.active && category.type === 'income');
@@ -30,6 +62,8 @@ export function AddTransactionScreen() {
   const expenseDefault = expenseCategories[0]?.name ?? 'Misc';
   const [showCalc, setShowCalc] = useState(false);
   const [showDate, setShowDate] = useState(false);
+  const [dateText, setDateText] = useState(() => toDisplayDate(form.date));
+  const [descFocused, setDescFocused] = useState(false);
 
   React.useEffect(() => {
     if (showAdd && !activeCategories.some((category) => category.name === form.category)) {
@@ -38,7 +72,34 @@ export function AddTransactionScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showAdd, form.type, form.category, categories]);
 
-  const dateParts = dateLabelParts(form.date);
+  // Keep the typed date field in sync with the stored value (calendar pick / edit).
+  React.useEffect(() => {
+    setDateText(toDisplayDate(form.date));
+  }, [form.date]);
+
+  function handleDateType(raw: string) {
+    const formatted = formatTypedDate(raw);
+    setDateText(formatted);
+    const iso = parseTypedDate(formatted);
+    if (iso) setForm((current) => ({ ...current, date: iso }));
+  }
+
+  function handleDateBlur() {
+    if (parseTypedDate(dateText) === null) setDateText(toDisplayDate(form.date));
+  }
+
+  const noteQuery = form.note.trim().toLowerCase();
+  const noteSuggestions = noteQuery
+    ? Array.from(
+        new Set(
+          transactions
+            .filter(
+              (t) => !t.deleted && t.note && t.note.toLowerCase().includes(noteQuery) && t.note.trim().toLowerCase() !== noteQuery
+            )
+            .map((t) => t.note.trim())
+        )
+      ).slice(0, 6)
+    : [];
 
   return (
     <Modal visible={showAdd} animationType="slide" presentationStyle="pageSheet" onRequestClose={cancelEdit}>
@@ -139,14 +200,21 @@ export function AddTransactionScreen() {
           </View>
 
           <Text style={styles.section}>Date</Text>
-          <TouchableOpacity style={styles.dateField} onPress={() => setShowDate(true)} activeOpacity={0.8}>
+          <View style={styles.dateField}>
             <Text style={styles.dateIcon}>📅</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.dateValue}>{dateParts.dateText}</Text>
-              <Text style={styles.dateSub}>{dateParts.relative ?? dateParts.weekday}</Text>
-            </View>
-            <Text style={styles.dateChevron}>›</Text>
-          </TouchableOpacity>
+            <TextInput
+              style={styles.dateInput}
+              value={dateText}
+              onChangeText={handleDateType}
+              onBlur={handleDateBlur}
+              placeholder="DD/MM/YYYY"
+              placeholderTextColor={c.textDim}
+              keyboardType="number-pad"
+            />
+            <TouchableOpacity onPress={() => setShowDate(true)} hitSlop={8} accessibilityLabel="Open calendar">
+              <Text style={styles.dateChevron}>▾</Text>
+            </TouchableOpacity>
+          </View>
 
           <DatePicker
             visible={showDate}
@@ -155,15 +223,32 @@ export function AddTransactionScreen() {
             onClose={() => setShowDate(false)}
           />
 
-          <Text style={styles.section}>Memo</Text>
+          <Text style={styles.section}>Description</Text>
           <TextInput
             style={[styles.field, styles.memo]}
             value={form.note}
             onChangeText={(note) => setForm({ ...form, note })}
-            placeholder="Optional note"
+            onFocus={() => setDescFocused(true)}
+            onBlur={() => setTimeout(() => setDescFocused(false), 150)}
+            placeholder="Optional description"
             placeholderTextColor={c.textDim}
             multiline
           />
+          {descFocused && noteSuggestions.length > 0 ? (
+            <View style={styles.suggestBox}>
+              {noteSuggestions.map((suggestion) => (
+                <TouchableOpacity
+                  key={suggestion}
+                  style={styles.suggestItem}
+                  onPress={() => setForm({ ...form, note: suggestion })}
+                >
+                  <Text style={[styles.suggestText, { color: c.text }]} numberOfLines={1}>
+                    {suggestion}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : null}
 
           <Text style={styles.section}>Receipt link</Text>
           <TextInput
@@ -251,9 +336,8 @@ const makeStyles = (c: ThemePalette) =>
       paddingVertical: 12
     },
     dateIcon: { fontSize: 18 },
-    dateValue: { color: c.text, fontWeight: '700', fontSize: 15 },
-    dateSub: { color: c.textMuted, fontSize: 12, marginTop: 1 },
-    dateChevron: { color: c.textDim, fontSize: 22 },
+    dateInput: { flex: 1, color: c.text, fontWeight: '700', fontSize: 15, letterSpacing: 0.5, paddingVertical: 2 },
+    dateChevron: { color: c.textDim, fontSize: 18 },
     field: {
       backgroundColor: c.surface,
       borderRadius: radius.md,
@@ -263,5 +347,15 @@ const makeStyles = (c: ThemePalette) =>
       paddingHorizontal: 12,
       paddingVertical: 12
     },
-    memo: { minHeight: 80, textAlignVertical: 'top' }
+    memo: { minHeight: 80, textAlignVertical: 'top' },
+    suggestBox: {
+      backgroundColor: c.surface,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: c.border,
+      marginTop: -6,
+      overflow: 'hidden'
+    },
+    suggestItem: { paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.border },
+    suggestText: { fontSize: 14 }
   });

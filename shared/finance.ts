@@ -235,6 +235,71 @@ export function summarizeByCategory(
     .sort((left, right) => right.amount - left.amount);
 }
 
+/** Number of days in a `YYYY-MM` month. */
+export function daysInMonth(month: string): number {
+  const [year, monthNumber] = month.split('-').map(Number);
+  if (!year || !monthNumber) return 30;
+  return new Date(year, monthNumber, 0).getDate();
+}
+
+/** Previous month key (`YYYY-MM`) relative to the given month. */
+export function previousMonthKey(month = monthKey()): string {
+  const [year, monthNumber] = month.split('-').map(Number);
+  return monthKey(new Date(year, monthNumber - 2, 1));
+}
+
+export type DailySeries = {
+  /** Per-day income totals, index 0 = day 1. */
+  income: number[];
+  /** Per-day expense totals. */
+  expense: number[];
+  /** Per-day net (income - expense). */
+  net: number[];
+};
+
+/** Per-day income / expense / net series for a month, used to draw card sparklines. */
+export function dailySeries(transactions: Transaction[], month = monthKey()): DailySeries {
+  const total = daysInMonth(month);
+  const income = new Array<number>(total).fill(0);
+  const expense = new Array<number>(total).fill(0);
+
+  for (const transaction of activeTransactions(transactions)) {
+    if (!transaction.date.startsWith(month)) continue;
+    const day = Number(transaction.date.slice(8, 10));
+    if (!day || day < 1 || day > total) continue;
+    if (transaction.type === 'income') income[day - 1] += transaction.amount;
+    else expense[day - 1] += transaction.amount;
+  }
+
+  const net = income.map((value, index) => value - expense[index]);
+  return { income, expense, net };
+}
+
+export type AverageDailyStats = {
+  /** Average net per day for the month. */
+  averageDaily: number;
+  /** Average net per day for the previous month. */
+  prevAverageDaily: number;
+  /** Percentage change vs the previous month (0 when the previous month is empty). */
+  pctChange: number;
+};
+
+/** Average daily net for a month plus its percentage change versus the previous month. */
+export function averageDailyStats(transactions: Transaction[], month = monthKey()): AverageDailyStats {
+  const current = summarizeMonth(transactions, month);
+  const prevMonth = previousMonthKey(month);
+  const previous = summarizeMonth(transactions, prevMonth);
+
+  const curDays = daysInMonth(month);
+  const prevDays = daysInMonth(prevMonth);
+  const averageDaily = curDays > 0 ? current.balance / curDays : 0;
+  const prevAverageDaily = prevDays > 0 ? previous.balance / prevDays : 0;
+  const pctChange =
+    prevAverageDaily !== 0 ? ((averageDaily - prevAverageDaily) / Math.abs(prevAverageDaily)) * 100 : 0;
+
+  return { averageDaily, prevAverageDaily, pctChange };
+}
+
 export type BalanceOptions = {
   /** When true, balances accumulate from earlier months (running balance). Default true (legacy behaviour). */
   carryForward?: boolean;
