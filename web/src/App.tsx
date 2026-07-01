@@ -2677,6 +2677,21 @@ function useUsageRank(transactions: Transaction[], key: 'category' | 'account') 
 
 const PICKER_INITIAL = 8;
 
+/** True on the mobile bottom-sheet breakpoint, where lists scroll horizontally. */
+function useIsNarrow(max = 760) {
+  const [narrow, setNarrow] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(`(max-width:${max}px)`).matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width:${max}px)`);
+    const onChange = () => setNarrow(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, [max]);
+  return narrow;
+}
+
 function AddCategoryPicker({
   items,
   value,
@@ -2692,6 +2707,7 @@ function AddCategoryPicker({
 }) {
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState(false);
+  const narrow = useIsNarrow();
   const rank = useUsageRank(transactions, 'category');
   const q = query.trim().toLowerCase();
 
@@ -2700,17 +2716,18 @@ function AddCategoryPicker({
     [items, rank]
   );
 
+  // On mobile the row scrolls horizontally, so show every category up front.
   let visible = sorted;
   if (q) {
     visible = items.filter((c) => c.name.toLowerCase().includes(q));
-  } else if (!expanded) {
+  } else if (!expanded && !narrow) {
     visible = sorted.slice(0, PICKER_INITIAL);
     if (value && !visible.some((c) => c.name === value)) {
       const sel = items.find((c) => c.name === value);
       if (sel) visible = [sel, ...visible.slice(0, PICKER_INITIAL - 1)];
     }
   }
-  const canExpand = !q && items.length > PICKER_INITIAL;
+  const canExpand = !q && !narrow && items.length > PICKER_INITIAL;
 
   return (
     <section className="picker">
@@ -2771,6 +2788,7 @@ function AddAccountPicker({
 }) {
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState(false);
+  const narrow = useIsNarrow();
   const rank = useUsageRank(transactions, 'account');
   const q = query.trim().toLowerCase();
 
@@ -2782,17 +2800,18 @@ function AddAccountPicker({
     [items, rank]
   );
 
+  // On mobile the row scrolls horizontally, so show every account up front.
   let visible = sorted;
   if (q) {
     visible = items.filter((a) => a.name.toLowerCase().includes(q));
-  } else if (!expanded) {
+  } else if (!expanded && !narrow) {
     visible = sorted.slice(0, PICKER_INITIAL);
     if (value && !visible.some((a) => a.name === value)) {
       const sel = items.find((a) => a.name === value);
       if (sel) visible = [sel, ...visible.slice(0, PICKER_INITIAL - 1)];
     }
   }
-  const canExpand = !q && items.length > PICKER_INITIAL;
+  const canExpand = !q && !narrow && items.length > PICKER_INITIAL;
 
   return (
     <section className="picker">
@@ -2861,6 +2880,15 @@ function AddModal() {
   const [showCalc, setShowCalc] = useState(false);
   useEscToClose(cancelEdit);
 
+  // Lock the page behind the sheet so there's a single (inner) scrollbar.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
   const expenseCategories = categories.filter((c) => c.active && c.type === 'expense');
   const incomeCategories = categories.filter((c) => c.active && c.type === 'income');
   const activeCategories = form.type === 'income' ? incomeCategories : expenseCategories;
@@ -2882,6 +2910,18 @@ function AddModal() {
   };
 
   const noteLen = (form.note ?? '').length;
+
+  const handleReceiptFile = (input: HTMLInputElement) => {
+    const file = input.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') setForm((cur) => ({ ...cur, receiptUrl: reader.result as string }));
+    };
+    reader.readAsDataURL(file);
+    input.value = '';
+  };
+  const receiptAttached = Boolean(form.receiptUrl && form.receiptUrl.startsWith('data:'));
 
   return (
     <div className="modal-backdrop" onClick={cancelEdit}>
@@ -2908,6 +2948,23 @@ function AddModal() {
           >
             <span className="seg-ico" aria-hidden>↗</span> Income
           </button>
+        </div>
+
+        <div className="field-group">
+          <label>Date</label>
+          <DatePickerField value={form.date} onChange={(date) => setForm({ ...form, date })} />
+        </div>
+
+        <div className="field-group">
+          <div className="section-head">
+            <label>Description <span className="opt">(optional)</span></label>
+            <span className="char-count">{noteLen}/200</span>
+          </div>
+          <DescriptionField
+            value={form.note}
+            onChange={(note) => setForm({ ...form, note: note.slice(0, 200) })}
+            transactions={transactions}
+          />
         </div>
 
         <div className="amount-field">
@@ -2960,32 +3017,33 @@ function AddModal() {
         />
 
         <div className="field-group">
-          <label>Date</label>
-          <DatePickerField value={form.date} onChange={(date) => setForm({ ...form, date })} />
-        </div>
-
-        <div className="field-group">
-          <div className="section-head">
-            <label>Description <span className="opt">(optional)</span></label>
-            <span className="char-count">{noteLen}/200</span>
-          </div>
-          <DescriptionField
-            value={form.note}
-            onChange={(note) => setForm({ ...form, note: note.slice(0, 200) })}
-            transactions={transactions}
-          />
-        </div>
-
-        <div className="field-group">
           <label>Receipt <span className="opt">(optional)</span></label>
-          <div className="receipt-input">
+          <div className="receipt-input add-web-only">
             <span className="ri-ico" aria-hidden>🔗</span>
             <input
-              value={form.receiptUrl ?? ''}
+              value={form.receiptUrl && !form.receiptUrl.startsWith('data:') ? form.receiptUrl : ''}
               onChange={(e) => setForm({ ...form, receiptUrl: e.target.value })}
               placeholder="Paste link or attach receipt"
             />
           </div>
+          <div className="receipt-cards add-mobile-only">
+            <label className="receipt-card">
+              <input type="file" accept="image/*" capture="environment" hidden onChange={(e) => handleReceiptFile(e.currentTarget)} />
+              <span className="rc-ico" aria-hidden>📷</span>
+              <span className="rc-text"><strong>Take Photo</strong><span>Capture receipt</span></span>
+            </label>
+            <label className="receipt-card">
+              <input type="file" accept="image/*" hidden onChange={(e) => handleReceiptFile(e.currentTarget)} />
+              <span className="rc-ico" aria-hidden>📎</span>
+              <span className="rc-text"><strong>Upload</strong><span>Choose from gallery</span></span>
+            </label>
+          </div>
+          {receiptAttached ? (
+            <div className="receipt-attached">
+              <span>📎 Receipt attached</span>
+              <button type="button" className="link" onClick={() => setForm({ ...form, receiptUrl: '' })}>Remove</button>
+            </div>
+          ) : null}
         </div>
         </div>
 

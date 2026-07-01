@@ -456,7 +456,8 @@ a { color: inherit; text-decoration: none; }
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  padding: 18px 28px;
+  /* Reserve space for the iPhone notch/camera in standalone PWA (0 elsewhere). */
+  padding: calc(18px + env(safe-area-inset-top)) 28px 18px;
   border-bottom: 1px solid var(--border-soft);
   background: rgba(11, 14, 20, 0.72);
   backdrop-filter: blur(14px);
@@ -1576,8 +1577,8 @@ textarea { min-height: 76px; resize: vertical; }
 
 .amount-field {
   display: grid;
-  gap: 8px;
-  padding: 16px;
+  gap: 2px;
+  padding: 11px 16px;
   border-radius: var(--radius-lg);
   background: var(--surface);
   border: 1px solid var(--border-soft);
@@ -1588,7 +1589,7 @@ textarea { min-height: 76px; resize: vertical; }
   gap: 8px;
 }
 .amount-currency {
-  font-size: 1.4rem;
+  font-size: 1.1rem;
   font-weight: 800;
   color: var(--text-dim);
   flex-shrink: 0;
@@ -1598,11 +1599,11 @@ textarea { min-height: 76px; resize: vertical; }
   min-width: 0;
   border: 0;
   background: transparent;
-  font-size: 2.2rem;
+  font-size: 1.55rem;
   font-weight: 900;
   letter-spacing: -0.03em;
   text-align: left;
-  padding: 4px 0;
+  padding: 0;
   outline: none;
 }
 .amount-hero-input.income { color: var(--income); }
@@ -1610,11 +1611,11 @@ textarea { min-height: 76px; resize: vertical; }
 .amount-hero-input::placeholder { color: var(--text-dim); opacity: 0.5; }
 .calc-open-btn {
   flex-shrink: 0;
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
   background: var(--accent-soft);
-  font-size: 1.2rem;
+  font-size: 1rem;
   display: grid;
   place-items: center;
   transition: background 0.12s, transform 0.1s;
@@ -2395,6 +2396,50 @@ textarea { min-height: 76px; resize: vertical; }
 }
 .receipt-input input { padding-left: 36px; }
 
+/* Receipt action cards (Take Photo / Upload) — shown on the mobile sheet. */
+.add-mobile-only { display: none; }
+.receipt-cards { display: flex; gap: 10px; }
+.receipt-card {
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.receipt-card:hover { border-color: var(--accent); background: var(--surface-2); }
+.receipt-card .rc-ico {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft);
+  font-size: 1.05rem;
+}
+.receipt-card .rc-text { display: grid; gap: 1px; min-width: 0; }
+.receipt-card .rc-text strong { font-size: 0.84rem; }
+.receipt-card .rc-text span { color: var(--text-muted); font-size: 0.74rem; }
+.receipt-attached {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+/* Reduced-height description area (fintech layout puts it near the top). */
+.desc-field textarea { min-height: 56px; }
+
 /* ---------- PWA install / update banners ---------- */
 .pwa-banner {
   position: fixed;
@@ -2470,7 +2515,7 @@ textarea { min-height: 76px; resize: vertical; }
 
   /* Header: title + status on row 1; month nav, sync, theme and add all share
      a single compact row 2. */
-  .topbar { padding: 8px 12px; gap: 6px 8px; flex-wrap: wrap; align-items: center; }
+  .topbar { padding: calc(8px + env(safe-area-inset-top)) 12px 8px; gap: 6px 8px; flex-wrap: wrap; align-items: center; }
   .topbar h1 { font-size: 1.04rem; }
   .topbar-lead { flex-basis: 100%; min-width: 0; }
   .topbar .status { font-size: 0.72rem; }
@@ -2509,15 +2554,51 @@ textarea { min-height: 76px; resize: vertical; }
     height: 100dvh;
     border-radius: 0;
   }
-  .add-modal .modal-head { padding: 14px 16px 10px; }
-  .add-modal .modal-body { padding: 2px 16px 14px; gap: 13px; }
+  /* Clear the iPhone notch/camera on the full-height sheet header. */
+  .add-modal .modal-head { padding: calc(14px + env(safe-area-inset-top)) 16px 10px; }
+  .add-modal .modal-body { padding: 2px 16px 14px; gap: 15px; }
   .add-modal .modal-foot { padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); }
 
-  /* Compact category/account chips so the lists fit with little scrolling. */
-  .add-modal .chips { gap: 6px; }
-  .add-modal .chip { padding: 6px 11px 6px 7px; font-size: 0.76rem; gap: 5px; }
-  .add-modal .chip .chip-ico { width: 18px; height: 18px; font-size: 0.78rem; }
-  .add-modal .acct-grid { grid-template-columns: repeat(2, 1fr); }
+  /* Receipt: hide the link input, show the Take Photo / Upload cards. */
+  .add-web-only { display: none; }
+  .add-mobile-only { display: flex; }
+
+  /* Category chips become horizontally scrollable circular-icon cards. */
+  .add-modal .chips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 10px;
+    padding-bottom: 4px;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+  }
+  .add-modal .chip {
+    flex: 0 0 auto;
+    flex-direction: column;
+    width: 76px;
+    padding: 12px 6px 10px;
+    border-radius: 18px;
+    gap: 7px;
+    text-align: center;
+    white-space: normal;
+    line-height: 1.15;
+    scroll-snap-align: start;
+  }
+  .add-modal .chip .chip-ico { width: 38px; height: 38px; font-size: 1.2rem; }
+
+  /* Account cards scroll horizontally too (swipe to see more). */
+  .add-modal .acct-grid {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 10px;
+    padding-bottom: 4px;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+  }
+  .add-modal .acct-card { flex: 0 0 auto; width: 190px; scroll-snap-align: start; }
 
   .content { padding: 12px 12px calc(82px + env(safe-area-inset-bottom)); }
   .stack { gap: 11px; }
