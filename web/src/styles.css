@@ -1517,8 +1517,29 @@ textarea { min-height: 76px; resize: vertical; }
 .modal-head-spacer { width: 52px; }
 
 /* Add-record dialog: scrollable body + sticky action footer. */
-.add-modal { display: flex; flex-direction: column; gap: 0; padding: 0; overflow: hidden; }
-.add-modal .modal-head { padding: 18px 22px 12px; }
+.add-modal { width: min(720px, 100%); display: flex; flex-direction: column; gap: 0; padding: 0; overflow: hidden; }
+.add-modal .modal-head { padding: 16px 22px 12px; }
+.add-head {
+  display: grid;
+  grid-template-columns: 40px 1fr 40px;
+  align-items: center;
+  border-bottom: 1px solid var(--border-soft);
+}
+.add-head strong { text-align: center; font-size: 1.02rem; }
+.add-head .theme-btn { justify-self: end; width: 34px; height: 34px; font-size: 0.9rem; }
+.modal-x {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  transition: background 0.12s, color 0.12s;
+}
+.modal-x:hover { background: var(--surface-hover); color: var(--text); }
 .add-modal .modal-body {
   display: grid;
   gap: 16px;
@@ -2239,6 +2260,140 @@ textarea { min-height: 76px; resize: vertical; }
 
 .modal label { color: var(--text-dim); font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
 .field-group { display: grid; gap: 7px; }
+.modal label .opt { color: var(--text-dim); font-weight: 700; text-transform: none; letter-spacing: 0; opacity: 0.75; }
+
+/* ---------- Add record: segmented type control ---------- */
+.seg-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  padding: 5px;
+}
+.seg {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-weight: 800;
+  font-size: 0.92rem;
+  border: 1px solid transparent;
+  transition: background 0.14s, color 0.14s, box-shadow 0.14s;
+}
+.seg .seg-ico { font-size: 0.95rem; font-weight: 900; }
+.seg:hover { color: var(--text); }
+.seg.active { background: var(--bg-elevated); box-shadow: var(--shadow-sm); }
+.seg.active.expense { color: var(--expense); }
+.seg.active.income { color: var(--income); }
+
+/* ---------- Add record: search-based pickers ---------- */
+.picker { display: grid; gap: 10px; }
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.manage-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 0.78rem;
+}
+.manage-link:hover { text-decoration: underline; }
+.char-count { color: var(--text-dim); font-size: 0.74rem; font-weight: 700; }
+
+.picker-search { position: relative; }
+.picker-search .ps-ico {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.82rem;
+  opacity: 0.6;
+  pointer-events: none;
+}
+.picker-search input { padding-left: 36px; }
+.picker-empty { color: var(--text-dim); font-size: 0.82rem; padding: 4px 2px; }
+
+.show-more {
+  justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 0.82rem;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+.show-more:hover { background: var(--accent-soft); }
+
+/* ---------- Add record: account cards ---------- */
+.acct-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.acct-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  text-align: left;
+  transition: border-color 0.12s, box-shadow 0.12s, background 0.12s;
+  min-width: 0;
+}
+.acct-card:hover { border-color: var(--border); }
+.acct-card.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.acct-avatar {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.82rem;
+  font-weight: 800;
+  background: color-mix(in srgb, var(--chip-accent, var(--accent)) 18%, transparent);
+  color: var(--chip-accent, var(--accent));
+}
+.acct-info { display: grid; gap: 1px; min-width: 0; }
+.acct-info strong { font-size: 0.83rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-bal { color: var(--text-muted); font-size: 0.75rem; }
+.acct-check {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 900;
+}
+
+/* ---------- Add record: receipt input ---------- */
+.receipt-input { position: relative; }
+.receipt-input .ri-ico {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.82rem;
+  opacity: 0.6;
+  pointer-events: none;
+}
+.receipt-input input { padding-left: 36px; }
 
 /* ---------- PWA install / update banners ---------- */
 .pwa-banner {
@@ -2362,6 +2517,7 @@ textarea { min-height: 76px; resize: vertical; }
   .add-modal .chips { gap: 6px; }
   .add-modal .chip { padding: 6px 11px 6px 7px; font-size: 0.76rem; gap: 5px; }
   .add-modal .chip .chip-ico { width: 18px; height: 18px; font-size: 0.78rem; }
+  .add-modal .acct-grid { grid-template-columns: repeat(2, 1fr); }
 
   .content { padding: 12px 12px calc(82px + env(safe-area-inset-bottom)); }
   .stack { gap: 11px; }

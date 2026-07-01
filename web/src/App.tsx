@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { PwaShell } from './components/PwaShell';
 import { useEscToClose } from './hooks/useEscToClose';
 import {
@@ -2635,7 +2635,7 @@ function DescriptionField({
         onChange={(e) => onChange(e.target.value)}
         onFocus={() => setFocused(true)}
         onBlur={() => window.setTimeout(() => setFocused(false), 120)}
-        placeholder="Optional description"
+        placeholder="Add a note about this transaction…"
       />
       {focused && suggestions.length > 0 ? (
         <div className="desc-suggest">
@@ -2658,6 +2658,192 @@ function DescriptionField({
   );
 }
 
+/** Rank a set of names by how often (and how recently) they appear in history. */
+function useUsageRank(transactions: Transaction[], key: 'category' | 'account') {
+  return useMemo(() => {
+    const rank = new Map<string, number>();
+    for (const t of transactions) {
+      if (t.deleted) continue;
+      const name = t[key];
+      if (!name) continue;
+      // Recency-weighted: each use counts, most recent date breaks ties.
+      const prev = rank.get(name) ?? 0;
+      const recency = t.date ? Number(t.date.replace(/-/g, '')) / 1e8 : 0;
+      rank.set(name, prev + 1 + recency * 0.001);
+    }
+    return rank;
+  }, [transactions, key]);
+}
+
+const PICKER_INITIAL = 8;
+
+function AddCategoryPicker({
+  items,
+  value,
+  onChange,
+  transactions,
+  onManage
+}: {
+  items: Category[];
+  value: string;
+  onChange: (name: string) => void;
+  transactions: Transaction[];
+  onManage: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [expanded, setExpanded] = useState(false);
+  const rank = useUsageRank(transactions, 'category');
+  const q = query.trim().toLowerCase();
+
+  const sorted = useMemo(
+    () => [...items].sort((a, b) => (rank.get(b.name) ?? 0) - (rank.get(a.name) ?? 0)),
+    [items, rank]
+  );
+
+  let visible = sorted;
+  if (q) {
+    visible = items.filter((c) => c.name.toLowerCase().includes(q));
+  } else if (!expanded) {
+    visible = sorted.slice(0, PICKER_INITIAL);
+    if (value && !visible.some((c) => c.name === value)) {
+      const sel = items.find((c) => c.name === value);
+      if (sel) visible = [sel, ...visible.slice(0, PICKER_INITIAL - 1)];
+    }
+  }
+  const canExpand = !q && items.length > PICKER_INITIAL;
+
+  return (
+    <section className="picker">
+      <div className="section-head">
+        <label>Category</label>
+        <button type="button" className="manage-link" onClick={onManage}>
+          Manage categories <span aria-hidden>⚙</span>
+        </button>
+      </div>
+      <div className="picker-search">
+        <span className="ps-ico" aria-hidden>🔍</span>
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search category…"
+          aria-label="Search category"
+        />
+      </div>
+      <div className="chips">
+        {visible.map((c) => {
+          const meta = getCategoryMeta(c.name);
+          const on = value === c.name;
+          return (
+            <button
+              key={c.name}
+              type="button"
+              className={on ? 'chip active' : 'chip'}
+              style={{ ['--chip-accent' as string]: meta.color }}
+              onClick={() => onChange(c.name)}
+            >
+              <span className="chip-ico">{meta.emoji}</span> {c.name}
+            </button>
+          );
+        })}
+        {visible.length === 0 ? <span className="picker-empty">No matches</span> : null}
+      </div>
+      {canExpand ? (
+        <button type="button" className="show-more" onClick={() => setExpanded((v) => !v)}>
+          {expanded ? 'Show less' : 'Show more'} <span aria-hidden>{expanded ? '⌃' : '⌄'}</span>
+        </button>
+      ) : null}
+    </section>
+  );
+}
+
+function AddAccountPicker({
+  items,
+  value,
+  onChange,
+  transactions,
+  onManage
+}: {
+  items: Account[];
+  value: string;
+  onChange: (account: Account) => void;
+  transactions: Transaction[];
+  onManage: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [expanded, setExpanded] = useState(false);
+  const rank = useUsageRank(transactions, 'account');
+  const q = query.trim().toLowerCase();
+
+  const balances = useMemo(() => computeAccountBalances(items, transactions), [items, transactions]);
+  const balanceOf = useMemo(() => new Map(balances.map((b) => [b.name, b.balance])), [balances]);
+
+  const sorted = useMemo(
+    () => [...items].sort((a, b) => (rank.get(b.name) ?? 0) - (rank.get(a.name) ?? 0)),
+    [items, rank]
+  );
+
+  let visible = sorted;
+  if (q) {
+    visible = items.filter((a) => a.name.toLowerCase().includes(q));
+  } else if (!expanded) {
+    visible = sorted.slice(0, PICKER_INITIAL);
+    if (value && !visible.some((a) => a.name === value)) {
+      const sel = items.find((a) => a.name === value);
+      if (sel) visible = [sel, ...visible.slice(0, PICKER_INITIAL - 1)];
+    }
+  }
+  const canExpand = !q && items.length > PICKER_INITIAL;
+
+  return (
+    <section className="picker">
+      <div className="section-head">
+        <label>Account</label>
+        <button type="button" className="manage-link" onClick={onManage}>
+          Manage accounts <span aria-hidden>⚙</span>
+        </button>
+      </div>
+      <div className="picker-search">
+        <span className="ps-ico" aria-hidden>🔍</span>
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search account…"
+          aria-label="Search account"
+        />
+      </div>
+      <div className="acct-grid">
+        {visible.map((a) => {
+          const meta = getAccountMeta(a.name);
+          const on = value === a.name;
+          const bal = balanceOf.get(a.name);
+          return (
+            <button
+              key={a.name}
+              type="button"
+              className={on ? 'acct-card active' : 'acct-card'}
+              style={{ ['--chip-accent' as string]: meta.color }}
+              onClick={() => onChange(a)}
+            >
+              <span className="acct-avatar">{meta.emoji || a.name.slice(0, 1).toUpperCase()}</span>
+              <span className="acct-info">
+                <strong>{a.name}</strong>
+                {bal !== undefined ? <span className="acct-bal">{formatMoney(bal, a.currency)}</span> : null}
+              </span>
+              {on ? <span className="acct-check" aria-hidden>✓</span> : null}
+            </button>
+          );
+        })}
+        {visible.length === 0 ? <span className="picker-empty">No matches</span> : null}
+      </div>
+      {canExpand ? (
+        <button type="button" className="show-more" onClick={() => setExpanded((v) => !v)}>
+          {expanded ? 'Show less' : 'Show more'} <span aria-hidden>{expanded ? '⌃' : '⌄'}</span>
+        </button>
+      ) : null}
+    </section>
+  );
+}
+
 function AddModal() {
   const {
     form,
@@ -2668,7 +2854,8 @@ function AddModal() {
     editingId,
     busy,
     saveTransaction,
-    cancelEdit
+    cancelEdit,
+    setMainTab
   } = useLedger();
 
   const [showCalc, setShowCalc] = useState(false);
@@ -2677,6 +2864,7 @@ function AddModal() {
   const expenseCategories = categories.filter((c) => c.active && c.type === 'expense');
   const incomeCategories = categories.filter((c) => c.active && c.type === 'income');
   const activeCategories = form.type === 'income' ? incomeCategories : expenseCategories;
+  const activeAccounts = accounts.filter((a) => a.active);
 
   const incomeDefault = incomeCategories[0]?.name ?? 'Salary';
   const expenseDefault = expenseCategories[0]?.name ?? 'Misc';
@@ -2688,19 +2876,38 @@ function AddModal() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.type, form.category, categories]);
 
+  const goManage = () => {
+    cancelEdit();
+    setMainTab('more');
+  };
+
+  const noteLen = (form.note ?? '').length;
+
   return (
     <div className="modal-backdrop" onClick={cancelEdit}>
       <div className="modal add-modal" onClick={(e) => e.stopPropagation()}>
-        <header className="modal-head">
-          <button className="link" onClick={cancelEdit}>Cancel</button>
+        <header className="modal-head add-head">
+          <button className="modal-x" onClick={cancelEdit} aria-label="Close">✕</button>
           <strong>{editingId ? 'Edit record' : 'Add record'}</strong>
-          <span className="modal-head-spacer" aria-hidden />
+          <ThemeToggle />
         </header>
 
         <div className="modal-body">
-        <div className="type-toggle">
-          <button className={form.type === 'expense' ? 'toggle active expense' : 'toggle'} onClick={() => setForm({ ...form, type: 'expense', category: expenseDefault })}>Expense</button>
-          <button className={form.type === 'income' ? 'toggle active income' : 'toggle'} onClick={() => setForm({ ...form, type: 'income', category: incomeDefault })}>Income</button>
+        <div className="seg-toggle">
+          <button
+            type="button"
+            className={form.type === 'expense' ? 'seg active expense' : 'seg'}
+            onClick={() => setForm({ ...form, type: 'expense', category: expenseDefault })}
+          >
+            <span className="seg-ico" aria-hidden>↓</span> Expense
+          </button>
+          <button
+            type="button"
+            className={form.type === 'income' ? 'seg active income' : 'seg'}
+            onClick={() => setForm({ ...form, type: 'income', category: incomeDefault })}
+          >
+            <span className="seg-ico" aria-hidden>↗</span> Income
+          </button>
         </div>
 
         <div className="amount-field">
@@ -2715,7 +2922,7 @@ function AddModal() {
               className={`amount-hero-input ${form.type}`}
               value={form.amount}
               onChange={(e) => setForm({ ...form, amount: e.target.value })}
-              placeholder="0"
+              placeholder="0.00"
               aria-label="Transaction amount"
             />
             <button type="button" className="calc-open-btn" onClick={() => setShowCalc(true)} title="Open calculator" aria-label="Open calculator">
@@ -2736,45 +2943,21 @@ function AddModal() {
           />
         ) : null}
 
-        <div className="field-group">
-          <label>Category</label>
-          <div className="chips">
-            {activeCategories.map((c) => {
-              const meta = getCategoryMeta(c.name);
-              const on = form.category === c.name;
-              return (
-                <button
-                  key={c.name}
-                  className={on ? 'chip active' : 'chip'}
-                  style={{ ['--chip-accent' as string]: meta.color }}
-                  onClick={() => setForm({ ...form, category: c.name })}
-                >
-                  <span className="chip-ico">{meta.emoji}</span> {c.name}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <AddCategoryPicker
+          items={activeCategories}
+          value={form.category}
+          onChange={(category) => setForm({ ...form, category })}
+          transactions={transactions}
+          onManage={goManage}
+        />
 
-        <div className="field-group">
-          <label>Account</label>
-          <div className="chips">
-            {accounts.filter((a) => a.active).map((a) => {
-              const meta = getAccountMeta(a.name);
-              const on = form.account === a.name;
-              return (
-                <button
-                  key={a.name}
-                  className={on ? 'chip active' : 'chip'}
-                  style={{ ['--chip-accent' as string]: meta.color }}
-                  onClick={() => setForm({ ...form, account: a.name, currency: a.currency })}
-                >
-                  <span className="chip-ico">{meta.emoji || a.name.slice(0, 1).toUpperCase()}</span> {a.name}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <AddAccountPicker
+          items={activeAccounts}
+          value={form.account}
+          onChange={(a) => setForm({ ...form, account: a.name, currency: a.currency })}
+          transactions={transactions}
+          onManage={goManage}
+        />
 
         <div className="field-group">
           <label>Date</label>
@@ -2782,17 +2965,27 @@ function AddModal() {
         </div>
 
         <div className="field-group">
-          <label>Description</label>
+          <div className="section-head">
+            <label>Description <span className="opt">(optional)</span></label>
+            <span className="char-count">{noteLen}/200</span>
+          </div>
           <DescriptionField
             value={form.note}
-            onChange={(note) => setForm({ ...form, note })}
+            onChange={(note) => setForm({ ...form, note: note.slice(0, 200) })}
             transactions={transactions}
           />
         </div>
 
         <div className="field-group">
-          <label>Receipt link</label>
-          <input value={form.receiptUrl ?? ''} onChange={(e) => setForm({ ...form, receiptUrl: e.target.value })} placeholder="https://..." />
+          <label>Receipt <span className="opt">(optional)</span></label>
+          <div className="receipt-input">
+            <span className="ri-ico" aria-hidden>🔗</span>
+            <input
+              value={form.receiptUrl ?? ''}
+              onChange={(e) => setForm({ ...form, receiptUrl: e.target.value })}
+              placeholder="Paste link or attach receipt"
+            />
+          </div>
         </div>
         </div>
 
