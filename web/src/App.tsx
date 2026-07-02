@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { PwaShell } from './components/PwaShell';
+import { CategoryFilterSheet } from './components/CategoryFilterSheet';
+import { MobileTxnRow } from './components/MobileTxnRow';
+import { ScrollTopButton } from './components/ScrollTopButton';
 import { useEscToClose } from './hooks/useEscToClose';
+import { useIsMobile } from './hooks/useMediaQuery';
 import {
   LedgerProvider,
   useLedger,
@@ -354,10 +358,10 @@ function NavIcon({ id }: { id: string }) {
     case 'trans':
       return (
         <svg {...p}>
-          <path d="M17 6H6l3-3" />
-          <path d="M17 6l-3 3" />
-          <path d="M7 18h11l-3 3" />
-          <path d="M7 18l3-3" />
+          <rect x="3" y="3" width="8" height="8" rx="1.6" />
+          <rect x="13" y="3" width="8" height="5" rx="1.6" />
+          <rect x="3" y="13" width="8" height="8" rx="1.6" />
+          <rect x="13" y="10" width="8" height="11" rx="1.6" />
         </svg>
       );
     case 'stats':
@@ -372,10 +376,12 @@ function NavIcon({ id }: { id: string }) {
     case 'categories':
       return (
         <svg {...p}>
-          <rect x="3" y="3" width="7" height="7" rx="1.6" />
-          <rect x="14" y="3" width="7" height="7" rx="1.6" />
-          <rect x="3" y="14" width="7" height="7" rx="1.6" />
-          <rect x="14" y="14" width="7" height="7" rx="1.6" />
+          <path d="M8 6h13" />
+          <path d="M8 12h13" />
+          <path d="M8 18h9" />
+          <circle cx="4" cy="6" r="1" fill="currentColor" stroke="none" />
+          <circle cx="4" cy="12" r="1" fill="currentColor" stroke="none" />
+          <circle cx="4" cy="18" r="1" fill="currentColor" stroke="none" />
         </svg>
       );
     case 'accounts':
@@ -1671,8 +1677,13 @@ function CategoryEditPanel({ category, onClose }: { category: Category; onClose:
 function CategoriesView() {
   const { transactions, categories, selectedMonth, startEdit, deleteTransaction, categoryFocus, clearCategoryFocus } =
     useLedger();
+  const isMobile = useIsMobile();
   const [selected, setSelected] = useState<string>(ALL_CATEGORIES);
   const [editing, setEditing] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   // Honor a "View details" jump from the Stats view, then consume it so manual
   // category changes here are not overridden.
@@ -1707,6 +1718,157 @@ function CategoriesView() {
   const heroEmoji = isAll ? '🗂️' : meta.emoji;
   const heroColor = isAll ? 'var(--accent)' : meta.color;
   const heroName = isAll ? 'All categories' : current || 'No categories';
+
+  if (isMobile) {
+    const q = search.trim().toLowerCase();
+    const searchRows = q
+      ? monthRows.filter((t) =>
+          [t.category, t.account, t.note, String(t.amount), t.currency].join(' ').toLowerCase().includes(q)
+        )
+      : monthRows;
+    const mGroups = groupTransactionsByDate(searchRows);
+    const income = searchRows.filter((t) => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+    const expense = searchRows.filter((t) => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+    const net = income - expense;
+    const counts = new Map<string, number>();
+    for (const t of monthAll) counts.set(t.category, (counts.get(t.category) ?? 0) + 1);
+    const sheetCategories = [...expenseCats, ...incomeCats].map((cat) => ({
+      name: cat.name,
+      count: counts.get(cat.name) ?? 0
+    }));
+
+    return (
+      <div className="stack mcat">
+        <div className="msum">
+          <div className="msum-col">
+            <span>Income</span>
+            <strong className="income">{formatMoney(income)}</strong>
+          </div>
+          <i className="msum-div" />
+          <div className="msum-col">
+            <span>Expenses</span>
+            <strong className="expense">{formatMoney(expense)}</strong>
+          </div>
+          <i className="msum-div" />
+          <div className="msum-col">
+            <span>Net</span>
+            <strong className={net >= 0 ? 'income' : 'expense'}>
+              {net < 0 ? '-' : ''}{formatMoney(Math.abs(net))}
+            </strong>
+          </div>
+        </div>
+
+        <div className="mcat-filter">
+          <button type="button" className="mcat-dd" onClick={() => setSheetOpen(true)}>
+            <span className="mcat-dd-ico" style={isAll ? undefined : { backgroundColor: `${meta.color}22`, color: meta.color }}>
+              {isAll ? '📁' : meta.emoji}
+            </span>
+            <span className="mcat-dd-text">{isAll ? 'All Categories' : current || 'Select category'}</span>
+            <span className="mcat-dd-caret">▾</span>
+          </button>
+          <button
+            type="button"
+            className={`mcat-search-btn ${searchOpen ? 'on' : ''}`}
+            aria-label="Search transactions"
+            onClick={() => setSearchOpen((v) => { if (v) setSearch(''); return !v; })}
+          >
+            🔍
+          </button>
+        </div>
+
+        {searchOpen ? (
+          <div className="mcat-search">
+            <span aria-hidden>🔍</span>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search notes, account, amount…"
+              autoFocus
+            />
+            {search ? (
+              <button type="button" className="mcat-search-clear" aria-label="Clear search" onClick={() => setSearch('')}>✕</button>
+            ) : null}
+          </div>
+        ) : null}
+
+        {currentCat ? (
+          <div className="mcat-selhead">
+            <span className="muted">{searchRows.length} transaction{searchRows.length === 1 ? '' : 's'} · {current}</span>
+            <button type="button" className="link accent" onClick={() => setEditing((v) => !v)}>Edit category</button>
+          </div>
+        ) : null}
+
+        {editing && currentCat ? (
+          <CategoryEditPanel key={currentCat.name} category={currentCat} onClose={() => setEditing(false)} />
+        ) : null}
+
+        <div className="mcat-groups">
+          {mGroups.length === 0 ? (
+            <div className="empty">
+              <span className="emoji">🗂️</span>
+              <strong>Nothing to show this month</strong>
+              <span className="muted">Switch months with ‹ › or pick another category.</span>
+            </div>
+          ) : null}
+          {mGroups.map((group) => {
+            const dayNet = group.items.reduce((sum, t) => sum + (t.type === 'income' ? t.amount : -t.amount), 0);
+            const isCollapsed = collapsed[group.date];
+            return (
+              <section key={group.date} className="mcard">
+                <button
+                  type="button"
+                  className="mcard-head"
+                  onClick={() => setCollapsed((prev) => ({ ...prev, [group.date]: !prev[group.date] }))}
+                >
+                  <span className="mcard-day">{group.parts.day}</span>
+                  <div className="mcard-meta">
+                    <span className="mcard-week">{group.parts.relative ?? group.parts.weekdayShort}</span>
+                    <span className="mcard-date">{group.parts.dateText}</span>
+                  </div>
+                  <span className="mcard-total">
+                    <small>Daily total</small>
+                    <em className={dayNet >= 0 ? 'income' : 'expense'}>
+                      {dayNet >= 0 ? '+' : '-'}{formatMoney(Math.abs(dayNet))}
+                    </em>
+                  </span>
+                  <span className="mcard-caret">{isCollapsed ? '⌄' : '⌃'}</span>
+                </button>
+                {isCollapsed
+                  ? null
+                  : group.items.map((txn) => {
+                      const rowMeta = getCategoryMeta(txn.category);
+                      const note = txn.note?.trim();
+                      const primary = note || txn.category;
+                      const secondary = note ? `${txn.account} • ${txn.category}` : txn.account;
+                      return (
+                        <MobileTxnRow
+                          key={txn.id}
+                          txn={txn}
+                          primary={primary}
+                          secondary={secondary}
+                          emoji={rowMeta.emoji}
+                          color={rowMeta.color}
+                          onEdit={startEdit}
+                          onDelete={(t) => void deleteTransaction(t)}
+                        />
+                      );
+                    })}
+              </section>
+            );
+          })}
+        </div>
+
+        <ScrollTopButton />
+        <CategoryFilterSheet
+          open={sheetOpen}
+          categories={sheetCategories}
+          selected={selected}
+          onSelect={(name) => { setSelected(name); setEditing(false); }}
+          onClose={() => setSheetOpen(false)}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="stack">

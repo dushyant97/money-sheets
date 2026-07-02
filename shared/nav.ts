@@ -17,17 +17,17 @@ export type NavItem = {
 };
 
 export const NAV: NavItem[] = [
-  { id: 'trans', label: 'Transactions', shortLabel: 'Records', icon: '📒', tint: '#4f7cff' },
+  { id: 'trans', label: 'Dashboard', shortLabel: 'Dashboard', icon: '🏠', tint: '#4f7cff' },
   { id: 'stats', label: 'Statistics', shortLabel: 'Stats', icon: '📊', tint: '#22c08b' },
-  { id: 'categories', label: 'Categories', shortLabel: 'Cats', icon: '🗂️', tint: '#ffb020' },
+  { id: 'categories', label: 'Transactions', shortLabel: 'Transactions', icon: '🧾', tint: '#ffb020' },
   { id: 'accounts', label: 'Accounts', shortLabel: 'Accounts', icon: '🏦', tint: '#9b6bff' },
   { id: 'more', label: 'Budgets & Data', shortLabel: 'More', icon: '⚙️', tint: '#ff5d8f' }
 ];
 
 export const TAB_TITLES: Record<MainTab, string> = {
-  trans: 'Transactions',
+  trans: 'Dashboard',
   stats: 'Statistics',
-  categories: 'Categories',
+  categories: 'Transactions',
   accounts: 'Accounts',
   more: 'Budgets & Data'
 };

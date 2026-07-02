@@ -1,23 +1,19 @@
 import React, { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { radius } from '../../../shared/theme';
-import type { TransactionType } from '../../../shared/finance';
 import {
   activeTransactions,
   buildCalendarMonth,
   carryOverBalance,
   dailySeries,
   dateKey,
-  filterTransactions,
   monthKey,
   summarizeByCategory,
   summarizeMonth,
-  summarizeWeek,
-  transactionsInMonth
+  summarizeWeek
 } from '../../../shared/finance';
 import { formatMoney } from '../../../shared/uiHelpers';
 import { PeriodPills, SummaryStrip } from '../components/SummaryStrip';
-import { TransactionList } from '../components/TransactionList';
 import { DayTransactionsModal } from '../components/DayTransactionsModal';
 import { useTheme } from '../theme/ThemeProvider';
 import { useLedger } from '../context/LedgerContext';
@@ -27,27 +23,12 @@ const HOME_VIEWS = [
   { id: 'summary' as const, label: 'Summary' }
 ];
 
-const TYPE_FILTERS: Array<{ id: TransactionType | 'all'; label: string }> = [
-  { id: 'all', label: 'All categories' },
-  { id: 'income', label: 'Income' },
-  { id: 'expense', label: 'Expense' }
-];
-
-const DURATIONS = [
-  { id: 'all' as const, label: 'All' },
-  { id: 'currentMonth' as const, label: 'Current month' }
-];
-
-const RECENT_LIMIT = 8;
-
 export function TransScreen() {
   const { palette: c } = useTheme();
   const {
     transactions,
     accounts,
     carryForward,
-    filters,
-    setFilters,
     homeView,
     selectedMonth,
     setHomeView,
@@ -56,22 +37,11 @@ export function TransScreen() {
   } = useLedger();
 
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
-  const [duration, setDuration] = useState<'all' | 'currentMonth'>('currentMonth');
-  const [showAll, setShowAll] = useState(false);
   const month = monthKey(selectedMonth);
 
   const monthSummary = useMemo(() => summarizeMonth(transactions, month), [transactions, month]);
   const weekSummary = useMemo(() => summarizeWeek(transactions), [transactions]);
   const series = useMemo(() => dailySeries(transactions, month), [transactions, month]);
-  const filtered = useMemo(() => {
-    const scoped = duration === 'currentMonth' ? transactionsInMonth(transactions, month) : transactions;
-    return filterTransactions(scoped, filters);
-  }, [transactions, month, filters, duration]);
-  const sortedFiltered = useMemo(
-    () => [...filtered].sort((a, b) => b.date.localeCompare(a.date)),
-    [filtered]
-  );
-  const visibleTransactions = showAll ? sortedFiltered : sortedFiltered.slice(0, RECENT_LIMIT);
   const broughtForward = useMemo(
     () => (carryForward ? carryOverBalance(accounts, transactions, month, true) : 0),
     [accounts, transactions, month, carryForward]
@@ -159,68 +129,6 @@ export function TransScreen() {
         </View>
       ) : null}
 
-      {/* Filters live in their own card, separate from the calendar above. */}
-      <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}>
-        <Text style={[styles.cardLabel, { color: c.textDim }]}>FILTERS</Text>
-        <View style={styles.typeRow}>
-          {TYPE_FILTERS.map((option) => {
-            const active = (filters.type ?? 'all') === option.id;
-            return (
-              <TouchableOpacity
-                key={option.id}
-                style={[
-                  styles.typePill,
-                  { backgroundColor: c.surface2, borderColor: 'transparent' },
-                  active && { backgroundColor: c.accentSoft, borderColor: c.accent }
-                ]}
-                onPress={() => setFilters({ ...filters, type: option.id })}
-              >
-                <Text style={[styles.typePillText, { color: active ? c.accentText : c.textMuted }]}>
-                  {option.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-        <TextInput
-          style={[styles.search, { backgroundColor: c.bgElevated, borderColor: c.border, color: c.text }]}
-          value={filters.search ?? ''}
-          onChangeText={(search) => setFilters({ ...filters, search })}
-          placeholder="Search notes, category, amount…"
-          placeholderTextColor={c.textDim}
-          autoCapitalize="none"
-        />
-        <Text style={[styles.cardLabel, { color: c.textDim, marginTop: 4 }]}>DURATION</Text>
-        <View style={styles.typeRow}>
-          {DURATIONS.map((option) => {
-            const active = duration === option.id;
-            return (
-              <TouchableOpacity
-                key={option.id}
-                style={[
-                  styles.typePill,
-                  { backgroundColor: c.surface2, borderColor: 'transparent' },
-                  active && { backgroundColor: c.accentSoft, borderColor: c.accent }
-                ]}
-                onPress={() => setDuration(option.id)}
-              >
-                <Text style={[styles.typePillText, { color: active ? c.accentText : c.textMuted }]}>{option.label}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </View>
-
-      <View style={styles.recentHead}>
-        <Text style={[styles.cardLabel, { color: c.textDim }]}>RECENT TRANSACTIONS</Text>
-        {sortedFiltered.length > RECENT_LIMIT ? (
-          <TouchableOpacity onPress={() => setShowAll((s) => !s)}>
-            <Text style={[styles.viewAll, { color: c.accentText }]}>{showAll ? 'Show less' : 'View all'}</Text>
-          </TouchableOpacity>
-        ) : null}
-      </View>
-      <TransactionList transactions={visibleTransactions} onEdit={startEdit} onDelete={(t) => void deleteTransaction(t)} />
-
       <DayTransactionsModal
         date={selectedDay}
         transactions={dayTransactions}
@@ -237,7 +145,6 @@ const styles = StyleSheet.create({
   content: { padding: 16, paddingBottom: 120, gap: 14 },
   card: { borderRadius: radius.lg, borderWidth: 1, padding: 12, gap: 8 },
   cardTitle: { fontWeight: '800', fontSize: 15 },
-  cardLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
   weekdayRow: { flexDirection: 'row', justifyContent: 'space-around' },
   weekday: { fontSize: 11, fontWeight: '800', width: 28, textAlign: 'center' },
   calendarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
@@ -258,11 +165,5 @@ const styles = StyleSheet.create({
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
   summaryLabel: {},
   summaryValue: { fontWeight: '700' },
-  typeRow: { flexDirection: 'row', gap: 8 },
-  typePill: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: radius.pill, borderWidth: 1 },
-  typePillText: { fontSize: 12, fontWeight: '700' },
-  search: { borderRadius: radius.md, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10 },
-  carryNote: { fontSize: 11, textAlign: 'center', marginTop: -8 },
-  recentHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4, marginTop: 2 },
-  viewAll: { fontSize: 12, fontWeight: '800' }
+  carryNote: { fontSize: 11, textAlign: 'center', marginTop: -8 }
 });

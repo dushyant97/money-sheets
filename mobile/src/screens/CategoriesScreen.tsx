@@ -1,141 +1,280 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
 import { radius, type ThemePalette } from '../../../shared/theme';
 import { filterTransactions, monthKey, transactionsInMonth } from '../../../shared/finance';
 import { formatMoney, getCategoryMeta } from '../../../shared/uiHelpers';
+import { CategoryFilterSheet, ALL_CATEGORIES, type CategoryOption } from '../components/CategoryFilterSheet';
 import { EntityEditorModal } from '../components/EntityEditorModal';
-import { TransactionList } from '../components/TransactionList';
+import { TransactionGroups } from '../components/TransactionGroups';
 import { useTheme } from '../theme/ThemeProvider';
 import { useLedger } from '../context/LedgerContext';
+
+const SCROLL_TOP_THRESHOLD = 320;
 
 export function CategoriesScreen() {
   const { palette: c } = useTheme();
   const styles = useMemo(() => makeStyles(c), [c]);
   const { categories, transactions, selectedMonth, updateCategory, startEdit, deleteTransaction } = useLedger();
 
-  const activeCategories = useMemo(() => categories.filter((category) => category.active), [categories]);
-  const [selected, setSelected] = useState<string>(activeCategories[0]?.name ?? '');
+  const [selected, setSelected] = useState<string>(ALL_CATEGORIES);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [search, setSearch] = useState('');
   const [editing, setEditing] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
+
+  const month = monthKey(selectedMonth);
+  const monthTransactions = useMemo(() => transactionsInMonth(transactions, month), [transactions, month]);
+
+  const activeCategories = useMemo(() => categories.filter((category) => category.active), [categories]);
 
   useEffect(() => {
-    if (!activeCategories.some((category) => category.name === selected)) {
-      setSelected(activeCategories[0]?.name ?? '');
+    if (selected !== ALL_CATEGORIES && !activeCategories.some((category) => category.name === selected)) {
+      setSelected(ALL_CATEGORIES);
     }
   }, [activeCategories, selected]);
 
-  const month = monthKey(selectedMonth);
-  const meta = getCategoryMeta(selected);
-  const rows = useMemo(
-    () => filterTransactions(transactionsInMonth(transactions, month), { category: selected }),
-    [transactions, month, selected]
+  const categoryOptions = useMemo<CategoryOption[]>(
+    () =>
+      activeCategories.map((category) => ({
+        name: category.name,
+        count: monthTransactions.filter((t) => t.category === category.name).length
+      })),
+    [activeCategories, monthTransactions]
   );
-  const total = rows.reduce((sum, t) => sum + t.amount, 0);
+
+  const rows = useMemo(
+    () =>
+      filterTransactions(monthTransactions, {
+        category: selected === ALL_CATEGORIES ? undefined : selected,
+        search: search.trim() || undefined
+      }),
+    [monthTransactions, selected, search]
+  );
+
+  const income = rows.filter((t) => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+  const expense = rows.filter((t) => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+  const net = income - expense;
+
+  const selectedLabel = selected === ALL_CATEGORIES ? 'All Categories' : selected;
+  const selectedMeta = selected === ALL_CATEGORIES ? null : getCategoryMeta(selected);
+
+  function onScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    setShowScrollTop(event.nativeEvent.contentOffset.y > SCROLL_TOP_THRESHOLD);
+  }
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <View style={styles.pickerWrap}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pickerRow}>
-          {activeCategories.map((category) => {
-            const m = getCategoryMeta(category.name);
-            const active = selected === category.name;
-            return (
-              <TouchableOpacity
-                key={category.name}
-                style={[
-                  styles.pickChip,
-                  { backgroundColor: active ? `${m.color}22` : c.surface, borderColor: active ? m.color : 'transparent' }
-                ]}
-                onPress={() => setSelected(category.name)}
-              >
-                <Text style={styles.pickEmoji}>{m.emoji}</Text>
-                <Text style={[styles.pickText, { color: active ? c.text : c.textMuted }]} numberOfLines={1}>
-                  {category.name}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      </View>
-
-      {selected ? (
-        <>
-          <View style={[styles.hero, { backgroundColor: `${meta.color}1a`, borderColor: `${meta.color}55` }]}>
-            <View style={[styles.heroIcon, { backgroundColor: `${meta.color}33` }]}>
-              <Text style={styles.heroEmoji}>{meta.emoji}</Text>
-            </View>
-            <View style={styles.heroInfo}>
-              <Text style={styles.heroName}>{selected}</Text>
-              <Text style={styles.heroMeta}>
-                {rows.length} transaction{rows.length === 1 ? '' : 's'} this month
-              </Text>
-            </View>
-            <View style={styles.heroRight}>
-              <Text style={styles.heroTotal}>{formatMoney(total)}</Text>
-              <TouchableOpacity style={styles.editBtn} onPress={() => setEditing(true)}>
-                <Text style={styles.editText}>Edit</Text>
-              </TouchableOpacity>
-            </View>
+    <View style={styles.screen}>
+      <ScrollView
+        ref={scrollRef}
+        style={styles.screen}
+        contentContainerStyle={styles.content}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={[styles.summary, { backgroundColor: c.surface }]}>
+          <View style={styles.summaryCol}>
+            <Text style={[styles.summaryLabel, { color: c.textDim }]}>Income</Text>
+            <Text style={[styles.summaryValue, { color: c.income }]} numberOfLines={1}>
+              {formatMoney(income)}
+            </Text>
           </View>
+          <View style={[styles.summaryDivider, { backgroundColor: c.borderSoft }]} />
+          <View style={styles.summaryCol}>
+            <Text style={[styles.summaryLabel, { color: c.textDim }]}>Expenses</Text>
+            <Text style={[styles.summaryValue, { color: c.expense }]} numberOfLines={1}>
+              {formatMoney(expense)}
+            </Text>
+          </View>
+          <View style={[styles.summaryDivider, { backgroundColor: c.borderSoft }]} />
+          <View style={styles.summaryCol}>
+            <Text style={[styles.summaryLabel, { color: c.textDim }]}>Net</Text>
+            <Text style={[styles.summaryValue, { color: net >= 0 ? c.income : c.expense }]} numberOfLines={1}>
+              {net < 0 ? '-' : ''}
+              {formatMoney(Math.abs(net))}
+            </Text>
+          </View>
+        </View>
 
-          <TransactionList
-            transactions={rows}
-            showDateHeaders={false}
-            onEdit={startEdit}
-            onDelete={(t) => void deleteTransaction(t)}
-          />
-        </>
-      ) : (
-        <Text style={styles.empty}>No categories yet. Add some from the More tab.</Text>
-      )}
+        <View style={styles.filterRow}>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            style={[styles.dropdown, { backgroundColor: c.surface, borderColor: c.border }]}
+            onPress={() => setSheetOpen(true)}
+          >
+            <Text style={styles.dropdownEmoji}>{selectedMeta?.emoji ?? '📁'}</Text>
+            <Text style={[styles.dropdownText, { color: c.text }]} numberOfLines={1}>
+              {selectedLabel}
+            </Text>
+            <Text style={[styles.dropdownCaret, { color: c.textMuted }]}>▾</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            style={[styles.searchBtn, { backgroundColor: searchOpen ? c.accentSoft : c.surface, borderColor: searchOpen ? c.accent : c.border }]}
+            onPress={() => {
+              setSearchOpen((open) => {
+                if (open) setSearch('');
+                return !open;
+              });
+            }}
+            accessibilityLabel="Search transactions"
+          >
+            <Text style={styles.searchBtnIcon}>🔍</Text>
+          </TouchableOpacity>
+        </View>
 
-      <EntityEditorModal
-        visible={editing}
-        title={`Edit ${selected}`}
-        initial={{ name: selected, emoji: meta.emoji, color: meta.color }}
-        onClose={() => setEditing(false)}
-        onSave={(value) => {
-          void updateCategory(selected, { name: value.name, emoji: value.emoji, color: value.color });
-          setSelected(value.name);
-          setEditing(false);
-        }}
+        {searchOpen ? (
+          <View style={[styles.searchWrap, { backgroundColor: c.surface, borderColor: c.border }]}>
+            <Text style={styles.searchIcon}>🔍</Text>
+            <TextInput
+              style={[styles.searchInput, { color: c.text }]}
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Search notes, account, amount…"
+              placeholderTextColor={c.textDim}
+              autoCapitalize="none"
+              autoFocus
+            />
+            {search ? (
+              <TouchableOpacity hitSlop={8} onPress={() => setSearch('')}>
+                <Text style={[styles.searchClear, { color: c.textDim }]}>✕</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        ) : null}
+
+        {selectedMeta ? (
+          <View style={styles.selectedHead}>
+            <Text style={[styles.selectedCount, { color: c.textMuted }]}>
+              {rows.length} transaction{rows.length === 1 ? '' : 's'} · {selectedLabel}
+            </Text>
+            <TouchableOpacity onPress={() => setEditing(true)} hitSlop={8}>
+              <Text style={[styles.editLink, { color: c.accentText }]}>Edit category</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        <TransactionGroups
+          transactions={rows}
+          onEdit={startEdit}
+          onDelete={(t) => void deleteTransaction(t)}
+        />
+      </ScrollView>
+
+      {showScrollTop ? (
+        <TouchableOpacity
+          activeOpacity={0.85}
+          style={[styles.scrollTop, { backgroundColor: c.accent }]}
+          onPress={() => scrollRef.current?.scrollTo({ y: 0, animated: true })}
+          accessibilityLabel="Scroll to top"
+        >
+          <Text style={styles.scrollTopIcon}>↑</Text>
+        </TouchableOpacity>
+      ) : null}
+
+      <CategoryFilterSheet
+        visible={sheetOpen}
+        categories={categoryOptions}
+        selected={selected}
+        onSelect={setSelected}
+        onClose={() => setSheetOpen(false)}
       />
-    </ScrollView>
+
+      {selectedMeta ? (
+        <EntityEditorModal
+          visible={editing}
+          title={`Edit ${selected}`}
+          initial={{ name: selected, emoji: selectedMeta.emoji, color: selectedMeta.color }}
+          onClose={() => setEditing(false)}
+          onSave={(value) => {
+            void updateCategory(selected, { name: value.name, emoji: value.emoji, color: value.color });
+            setSelected(value.name);
+            setEditing(false);
+          }}
+        />
+      ) : null}
+    </View>
   );
 }
 
 const makeStyles = (c: ThemePalette) =>
   StyleSheet.create({
     screen: { flex: 1, backgroundColor: c.bg },
-    content: { padding: 16, paddingBottom: 120, gap: 14 },
-    pickerWrap: {},
-    pickerRow: { gap: 8, paddingVertical: 2 },
-    pickChip: {
+    content: { padding: 16, paddingBottom: 130, gap: 14 },
+    summary: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 6,
-      paddingHorizontal: 12,
-      paddingVertical: 8,
+      borderRadius: 22,
+      paddingVertical: 20,
+      paddingHorizontal: 12
+    },
+    summaryCol: { flex: 1, alignItems: 'center', gap: 6 },
+    summaryDivider: { width: StyleSheet.hairlineWidth, alignSelf: 'stretch', marginVertical: 4 },
+    summaryLabel: { fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4 },
+    summaryValue: { fontSize: 18, fontWeight: '800', fontVariant: ['tabular-nums'] },
+    filterRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    dropdown: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      height: 48,
       borderRadius: radius.pill,
-      borderWidth: 1
+      borderWidth: 1,
+      paddingHorizontal: 16
     },
-    pickEmoji: { fontSize: 14 },
-    pickText: { fontWeight: '700', fontSize: 13, maxWidth: 120 },
-    hero: {
+    dropdownEmoji: { fontSize: 16 },
+    dropdownText: { flex: 1, fontSize: 15, fontWeight: '700' },
+    dropdownCaret: { fontSize: 14 },
+    searchBtn: {
+      width: 48,
+      height: 48,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      alignItems: 'center',
+      justifyContent: 'center'
+    },
+    searchBtnIcon: { fontSize: 16 },
+    searchWrap: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 12,
-      borderRadius: radius.lg,
+      gap: 8,
+      borderRadius: radius.pill,
       borderWidth: 1,
-      padding: 16
+      paddingHorizontal: 16,
+      height: 46
     },
-    heroIcon: { width: 52, height: 52, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
-    heroEmoji: { fontSize: 26 },
-    heroInfo: { flex: 1, gap: 2 },
-    heroName: { color: c.text, fontSize: 18, fontWeight: '800' },
-    heroMeta: { color: c.textMuted, fontSize: 12 },
-    heroRight: { alignItems: 'flex-end', gap: 6 },
-    heroTotal: { color: c.text, fontSize: 18, fontWeight: '900' },
-    editBtn: { backgroundColor: c.surface, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 5 },
-    editText: { color: c.accentText, fontWeight: '800', fontSize: 12 },
-    empty: { color: c.textMuted, textAlign: 'center', paddingVertical: 40 }
+    searchIcon: { fontSize: 14 },
+    searchInput: { flex: 1, fontSize: 15, paddingVertical: 0 },
+    searchClear: { fontSize: 15, fontWeight: '700', paddingHorizontal: 4 },
+    selectedHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4 },
+    selectedCount: { fontSize: 13, fontWeight: '600' },
+    editLink: { fontSize: 13, fontWeight: '800' },
+    scrollTop: {
+      position: 'absolute',
+      right: 20,
+      bottom: 28,
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: '#000',
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 4 },
+      elevation: 6
+    },
+    scrollTopIcon: { color: '#fff', fontSize: 22, fontWeight: '800', marginTop: -2 }
   });
