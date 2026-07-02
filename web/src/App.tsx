@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { PwaShell } from './components/PwaShell';
+import { AccountFilterSheet, ALL_ACCOUNTS } from './components/AccountFilterSheet';
 import { CategoryFilterSheet } from './components/CategoryFilterSheet';
 import { MobileTxnRow } from './components/MobileTxnRow';
 import { ScrollTopButton } from './components/ScrollTopButton';
@@ -33,7 +34,7 @@ import {
 } from './ledger';
 import { dateKey } from '../../shared/finance';
 import type { Account, AccountBalance, Category, Transaction, TransactionType } from '../../shared/finance';
-import { NAV as SHARED_NAV, TAB_TITLES } from '../../shared/nav';
+import { NAV as SHARED_NAV, MOBILE_TABBAR_NAV, TAB_TITLES } from '../../shared/nav';
 import type { StorageMode, StoragePreferences } from '../../shared/storage/types';
 import { isTursoConfigComplete } from '../../shared/storage/prefs';
 import { Calculator } from './Calculator';
@@ -300,7 +301,7 @@ function MobileTabBar() {
   const ledger = useLedger();
   return (
     <nav className="mobile-tabbar" aria-label="Primary">
-      {NAV.map((item) => (
+      {MOBILE_TABBAR_NAV.map((item) => (
         <button
           key={item.id}
           className={ledger.mainTab === item.id ? 'tab active' : 'tab'}
@@ -1386,11 +1387,21 @@ function StatsBreakdown({ type }: { type: TransactionType }) {
 }
 
 function StatsTrends({ type }: { type: TransactionType }) {
-  const { transactions, selectedMonth } = useLedger();
+  const { transactions, selectedMonth, categories } = useLedger();
   const [granularity, setGranularity] = useState<TrendGranularity>('month');
   // Empty selection = show every category. Selecting categories isolates them.
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const trends = buildCategoryTrends(transactions, { granularity, type, topN: 6, endDate: selectedMonth });
+  const categoryNames = useMemo(
+    () => categories.filter((cat) => cat.type === type).map((cat) => cat.name),
+    [categories, type]
+  );
+  const trends = buildCategoryTrends(transactions, {
+    granularity,
+    type,
+    topN: 6,
+    endDate: selectedMonth,
+    categoryNames
+  });
 
   const colored = trends.categories.map((cat, index) => ({
     ...cat,
@@ -1636,6 +1647,80 @@ function CategoryPicker({
   );
 }
 
+function AccountPicker({
+  accounts,
+  value,
+  amounts,
+  allTotal,
+  onChange
+}: {
+  accounts: Account[];
+  value: string;
+  amounts: Map<string, number>;
+  allTotal: number;
+  onChange: (name: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const isAll = value === ALL_ACCOUNTS;
+  const meta = getAccountMeta(isAll ? '' : value);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  return (
+    <div className={`cat-dd ${open ? 'open' : ''}`} ref={ref}>
+      <button type="button" className="cat-dd-btn" onClick={() => setOpen((o) => !o)} aria-haspopup="listbox" aria-expanded={open}>
+        <span className="dd-emoji" style={isAll ? { background: 'var(--accent-soft)' } : { backgroundColor: `${meta.color}22`, color: meta.color }}>
+          {isAll ? '🏦' : meta.emoji}
+        </span>
+        <span className="dd-current">{isAll ? 'All accounts' : value || 'Select account'}</span>
+        <span className="dd-caret">▾</span>
+      </button>
+      {open ? (
+        <div className="cat-dd-pop" role="listbox">
+          <div className="dd-group">
+            <button
+              type="button"
+              className={`dd-item ${isAll ? 'on' : ''}`}
+              onClick={() => { onChange(ALL_ACCOUNTS); setOpen(false); }}
+            >
+              <span className="dd-emoji" style={{ background: 'var(--accent-soft)' }}>🏦</span>
+              <span className="dd-name">All accounts</span>
+              {allTotal > 0 ? <span className="dd-amt">{formatMoney(allTotal)}</span> : null}
+            </button>
+          </div>
+          <div className="dd-group">
+            <span className="dd-group-label">Accounts</span>
+            {accounts.map((account) => {
+              const m = getAccountMeta(account.name);
+              const amt = amounts.get(account.name) ?? 0;
+              return (
+                <button
+                  key={account.name}
+                  type="button"
+                  className={`dd-item ${account.name === value ? 'on' : ''}`}
+                  onClick={() => { onChange(account.name); setOpen(false); }}
+                >
+                  <span className="dd-emoji" style={{ backgroundColor: `${m.color}22`, color: m.color }}>{m.emoji}</span>
+                  <span className="dd-name">{account.name}</span>
+                  {amt > 0 ? <span className="dd-amt">{formatMoney(amt)}</span> : null}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function CategoryEditPanel({ category, onClose }: { category: Category; onClose: () => void }) {
   const { updateCategory } = useLedger();
   const meta = getCategoryMeta(category.name);
@@ -1675,12 +1760,14 @@ function CategoryEditPanel({ category, onClose }: { category: Category; onClose:
 }
 
 function CategoriesView() {
-  const { transactions, categories, selectedMonth, startEdit, deleteTransaction, categoryFocus, clearCategoryFocus } =
+  const { transactions, categories, accounts, selectedMonth, startEdit, deleteTransaction, categoryFocus, clearCategoryFocus } =
     useLedger();
   const isMobile = useIsMobile();
   const [selected, setSelected] = useState<string>(ALL_CATEGORIES);
+  const [selectedAccount, setSelectedAccount] = useState<string>(ALL_ACCOUNTS);
   const [editing, setEditing] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [accountSheetOpen, setAccountSheetOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -1705,12 +1792,27 @@ function CategoriesView() {
   const currentCat = isAll ? undefined : categories.find((c) => c.name === current);
   const meta = getCategoryMeta(current);
 
+  const activeAccounts = accounts.filter((a) => a.active);
+  const accountNames = activeAccounts.map((a) => a.name);
+  const isAllAccounts = selectedAccount === ALL_ACCOUNTS;
+  const currentAccount = isAllAccounts
+    ? ALL_ACCOUNTS
+    : selectedAccount && accountNames.includes(selectedAccount)
+      ? selectedAccount
+      : accountNames[0] ?? '';
+  const accountMeta = getAccountMeta(isAllAccounts ? '' : currentAccount);
+
   const monthAll = transactionsInMonth(transactions, month).filter((t) => !t.deleted);
   const amounts = new Map<string, number>();
   for (const t of monthAll) amounts.set(t.category, (amounts.get(t.category) ?? 0) + t.amount);
+  const accountAmounts = new Map<string, number>();
+  for (const t of monthAll) accountAmounts.set(t.account, (accountAmounts.get(t.account) ?? 0) + t.amount);
   const allTotal = monthAll.reduce((sum, t) => sum + t.amount, 0);
 
-  const monthRows = isAll ? monthAll : monthAll.filter((t) => t.category === current);
+  const monthRows = filterTransactions(monthAll, {
+    category: isAll ? undefined : current,
+    account: isAllAccounts ? undefined : currentAccount
+  });
   const groups = groupTransactionsByDate(monthRows);
   const visible = groups.flatMap((g) => g.items);
   const total = visible.reduce((sum, t) => sum + t.amount, 0);
@@ -1735,6 +1837,12 @@ function CategoriesView() {
     const sheetCategories = [...expenseCats, ...incomeCats].map((cat) => ({
       name: cat.name,
       count: counts.get(cat.name) ?? 0
+    }));
+    const accountCounts = new Map<string, number>();
+    for (const t of monthAll) accountCounts.set(t.account, (accountCounts.get(t.account) ?? 0) + 1);
+    const sheetAccounts = activeAccounts.map((account) => ({
+      name: account.name,
+      count: accountCounts.get(account.name) ?? 0
     }));
 
     return (
@@ -1764,6 +1872,16 @@ function CategoriesView() {
               {isAll ? '📁' : meta.emoji}
             </span>
             <span className="mcat-dd-text">{isAll ? 'All Categories' : current || 'Select category'}</span>
+            <span className="mcat-dd-caret">▾</span>
+          </button>
+          <button type="button" className="mcat-dd" onClick={() => setAccountSheetOpen(true)}>
+            <span
+              className="mcat-dd-ico"
+              style={isAllAccounts ? undefined : { backgroundColor: `${accountMeta.color}22`, color: accountMeta.color }}
+            >
+              {isAllAccounts ? '🏦' : accountMeta.emoji}
+            </span>
+            <span className="mcat-dd-text">{isAllAccounts ? 'All Accounts' : currentAccount || 'Select account'}</span>
             <span className="mcat-dd-caret">▾</span>
           </button>
           <button
@@ -1866,6 +1984,13 @@ function CategoriesView() {
           onSelect={(name) => { setSelected(name); setEditing(false); }}
           onClose={() => setSheetOpen(false)}
         />
+        <AccountFilterSheet
+          open={accountSheetOpen}
+          accounts={sheetAccounts}
+          selected={selectedAccount}
+          onSelect={setSelectedAccount}
+          onClose={() => setAccountSheetOpen(false)}
+        />
       </div>
     );
   }
@@ -1881,6 +2006,13 @@ function CategoriesView() {
             amounts={amounts}
             allTotal={allTotal}
             onChange={(name) => { setSelected(name); setEditing(false); }}
+          />
+          <AccountPicker
+            accounts={activeAccounts}
+            value={currentAccount}
+            amounts={accountAmounts}
+            allTotal={allTotal}
+            onChange={setSelectedAccount}
           />
           {currentCat ? (
             <button

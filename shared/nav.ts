@@ -24,6 +24,15 @@ export const NAV: NavItem[] = [
   { id: 'more', label: 'Budgets & Data', shortLabel: 'More', icon: '⚙️', tint: '#ff5d8f' }
 ];
 
+/** Web mobile PWA bottom tab bar: Dashboard centered among five tabs. */
+export const MOBILE_TABBAR_NAV: NavItem[] = [
+  NAV[2],
+  NAV[1],
+  NAV[0],
+  NAV[3],
+  NAV[4]
+];
+
 export const TAB_TITLES: Record<MainTab, string> = {
   trans: 'Dashboard',
   stats: 'Statistics',

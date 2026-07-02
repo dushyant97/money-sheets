@@ -1,25 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
-import { getCategoryMeta } from '../ledger';
+import { getAccountMeta } from '../ledger';
 import { useEscToClose } from '../hooks/useEscToClose';
 import { useLockBodyScroll } from '../hooks/useLockBodyScroll';
 
-export const ALL_CATEGORIES = '__all__';
+export const ALL_ACCOUNTS = '__all__';
 
-export type SheetCategory = { name: string; count: number };
+export type SheetAccount = { name: string; count: number };
 
 /**
- * Mobile bottom sheet for choosing the active category filter. Includes an
- * "All Categories" option, a search field, and a radio-style selectable list.
+ * Mobile bottom sheet for choosing the active account filter. Includes an
+ * "All Accounts" option, a search field, and a radio-style selectable list.
  */
-export function CategoryFilterSheet({
+export function AccountFilterSheet({
   open,
-  categories,
+  accounts,
   selected,
   onSelect,
   onClose
 }: {
   open: boolean;
-  categories: SheetCategory[];
+  accounts: SheetAccount[];
   selected: string;
   onSelect: (name: string) => void;
   onClose: () => void;
@@ -34,9 +34,9 @@ export function CategoryFilterSheet({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return categories;
-    return categories.filter((option) => option.name.toLowerCase().includes(q));
-  }, [categories, query]);
+    if (!q) return accounts;
+    return accounts.filter((option) => option.name.toLowerCase().includes(q));
+  }, [accounts, query]);
 
   if (!open) return null;
 
@@ -59,12 +59,12 @@ export function CategoryFilterSheet({
 
   return (
     <div className="modal-backdrop cat-sheet-backdrop" onClick={onClose}>
-      <div className="cat-sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Choose category">
+      <div className="cat-sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Choose account">
         <div className="cat-sheet-grab" />
         <div className="cat-sheet-head">
           <div>
-            <h3 className="cat-sheet-title">Choose Category</h3>
-            <p className="cat-sheet-sub">Filter transactions by category</p>
+            <h3 className="cat-sheet-title">Choose Account</h3>
+            <p className="cat-sheet-sub">Filter transactions by account</p>
           </div>
           <button type="button" className="modal-x" onClick={onClose} aria-label="Close">✕</button>
         </div>
@@ -73,17 +73,17 @@ export function CategoryFilterSheet({
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search categories"
+            placeholder="Search accounts"
             autoFocus
           />
         </div>
         <div className="cat-sheet-list">
-          {!query.trim() ? row('All Categories', '📁', '#6c63ff', '__all__', ALL_CATEGORIES) : null}
+          {!query.trim() ? row('All Accounts', '🏦', '#9b6bff', '__all__', ALL_ACCOUNTS) : null}
           {filtered.map((option) => {
-            const meta = getCategoryMeta(option.name);
+            const meta = getAccountMeta(option.name);
             return row(option.name, meta.emoji, meta.color, option.name, option.name, option.count);
           })}
-          {filtered.length === 0 ? <p className="cat-sheet-empty">No categories match “{query}”.</p> : null}
+          {filtered.length === 0 ? <p className="cat-sheet-empty">No accounts match “{query}”.</p> : null}
         </div>
       </div>
     </div>

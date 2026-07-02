@@ -489,7 +489,8 @@ function stepBucket(date: Date, granularity: TrendGranularity, steps: number): D
 
 /**
  * Month-over-month (or week/year) totals per category, used to draw trend lines.
- * Returns ordered buckets (oldest first) and the top `topN` categories by total spend.
+ * Returns ordered buckets (oldest first) and the top `topN` categories by total spend,
+ * plus any `categoryNames` entries that have no transactions in range.
  */
 export function buildCategoryTrends(
   transactions: Transaction[],
@@ -499,6 +500,8 @@ export function buildCategoryTrends(
     periods?: number;
     endDate?: Date;
     topN?: number;
+    /** Ledger category names to include even when they have no transactions in range. */
+    categoryNames?: string[];
   }
 ): TrendResult {
   const { granularity, type = 'expense', topN = 5 } = options;
@@ -532,14 +535,29 @@ export function buildCategoryTrends(
     byCategory.set(transaction.category, series);
   }
 
-  const categories: CategoryTrend[] = Array.from(byCategory.entries())
-    .map(([category, points]: [string, number[]]) => ({
-      category,
-      points,
-      total: points.reduce((sum: number, value: number) => sum + value, 0)
-    }))
-    .sort((left, right) => right.total - left.total)
-    .slice(0, topN);
+  const zeroSeries = () => new Array<number>(periods).fill(0);
+  const toTrend = (category: string, points: number[]): CategoryTrend => ({
+    category,
+    points,
+    total: points.reduce((sum: number, value: number) => sum + value, 0)
+  });
+
+  for (const name of options.categoryNames ?? []) {
+    if (!byCategory.has(name)) byCategory.set(name, zeroSeries());
+  }
+
+  const ranked = Array.from(byCategory.entries())
+    .map(([category, points]) => toTrend(category, points))
+    .sort((left, right) => right.total - left.total || left.category.localeCompare(right.category));
+
+  const categories: CategoryTrend[] = ranked.filter((series) => series.total > 0).slice(0, topN);
+  const included = new Set(categories.map((series) => series.category));
+  for (const name of options.categoryNames ?? []) {
+    if (!included.has(name)) {
+      categories.push(toTrend(name, byCategory.get(name) ?? zeroSeries()));
+      included.add(name);
+    }
+  }
 
   const max = Math.max(1, ...categories.flatMap((series) => series.points));
 

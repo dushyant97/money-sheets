@@ -21,7 +21,7 @@ const GRANULARITIES: Array<{ id: TrendGranularity; label: string }> = [
 export function StatsScreen() {
   const { palette: c } = useTheme();
   const styles = useMemo(() => makeStyles(c), [c]);
-  const { transactions, selectedMonth } = useLedger();
+  const { transactions, selectedMonth, categories } = useLedger();
   const month = monthKey(selectedMonth);
 
   const [tab, setTab] = useState<'breakdown' | 'trends'>('breakdown');
@@ -44,9 +44,20 @@ export function StatsScreen() {
   );
   const total = type === 'expense' ? summary.expense : summary.income;
 
+  const categoryNames = useMemo(
+    () => categories.filter((cat) => cat.type === type).map((cat) => cat.name),
+    [categories, type]
+  );
   const trend = useMemo(
-    () => buildCategoryTrends(transactions, { granularity, type, endDate: selectedMonth, topN: 6 }),
-    [transactions, granularity, type, selectedMonth]
+    () =>
+      buildCategoryTrends(transactions, {
+        granularity,
+        type,
+        endDate: selectedMonth,
+        topN: 6,
+        categoryNames
+      }),
+    [transactions, granularity, type, selectedMonth, categoryNames]
   );
   const visibleTrend = useMemo(
     () => ({ ...trend, categories: trend.categories.filter((series) => !hidden.has(series.category)) }),

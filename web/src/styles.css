@@ -2507,7 +2507,24 @@ textarea { min-height: 76px; resize: vertical; }
 
 /* Phones & small tablets: bottom tab navigation */
 @media (max-width: 760px) {
-  .app-shell { grid-template-columns: 1fr; }
+  /* No horizontal page scroll — only Add Transaction category/account rows may pan-x. */
+  html, body {
+    overflow-x: hidden;
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .app-shell { grid-template-columns: 1fr; overflow-x: hidden; max-width: 100%; }
+  .main, .content, .stack {
+    overflow-x: hidden;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .panel, .stats-panel, .topbar, .mcat, .mcat-filter {
+    max-width: 100%;
+    min-width: 0;
+  }
+
   .sidebar { display: none; }
 
   /* Reveal panels that web hides because their actions live in the sidebar. */
@@ -2525,10 +2542,10 @@ textarea { min-height: 76px; resize: vertical; }
   .topbar .month-nav { order: 2; flex: 0 1 auto; min-width: 0; padding: 2px; gap: 0; justify-content: space-between; }
   .topbar .month-nav strong { min-width: 0; text-align: center; font-size: 0.76rem; }
   .topbar .month-nav .nav-btn { width: 24px; height: 24px; font-size: 0.88rem; }
-  .topbar-actions { order: 3; flex: 1 1 auto; justify-content: flex-end; gap: 6px; min-width: 0; }
+  .topbar-actions { order: 3; flex: 1 1 auto; justify-content: flex-end; gap: 6px; min-width: 0; max-width: 100%; overflow: hidden; }
 
   /* Compact sync status: icon + short status text (e.g. "Synced") + Refresh. */
-  .topbar-actions .sync-status-bar.compact { padding: 5px 8px; max-width: none; gap: 5px; }
+  .topbar-actions .sync-status-bar.compact { padding: 5px 8px; max-width: 100%; gap: 5px; min-width: 0; flex: 1 1 auto; }
   .topbar-actions .sync-status-bar.compact .sync-status-label { display: inline; font-size: 0.68rem; }
   .topbar-actions .sync-status-bar.compact .sync-refresh-btn {
     margin-left: 2px;
@@ -2556,8 +2573,15 @@ textarea { min-height: 76px; resize: vertical; }
   }
   /* Clear the iPhone notch/camera on the full-height sheet header. */
   .add-modal .modal-head { padding: calc(14px + env(safe-area-inset-top)) 16px 10px; }
-  .add-modal .modal-body { padding: 2px 16px 14px; gap: 15px; }
+  .add-modal .modal-body {
+    padding: 2px 16px 14px;
+    gap: 15px;
+    overflow-x: hidden;
+    max-width: 100%;
+    min-width: 0;
+  }
   .add-modal .modal-foot { padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); }
+  .add-modal .field-group { min-width: 0; max-width: 100%; }
 
   /* Receipt: hide the link input, show the Take Photo / Upload cards. */
   .add-web-only { display: none; }
@@ -2566,12 +2590,15 @@ textarea { min-height: 76px; resize: vertical; }
   /* Category chips become horizontally scrollable circular-icon cards. */
   .add-modal .chips {
     flex-wrap: nowrap;
+    width: 100%;
+    max-width: 100%;
     overflow-x: auto;
     overflow-y: hidden;
     gap: 10px;
     padding-bottom: 4px;
     scroll-snap-type: x proximity;
     -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
   }
   .add-modal .chip {
     flex: 0 0 auto;
@@ -2591,12 +2618,15 @@ textarea { min-height: 76px; resize: vertical; }
   .add-modal .acct-grid {
     display: flex;
     flex-wrap: nowrap;
+    width: 100%;
+    max-width: 100%;
     overflow-x: auto;
     overflow-y: hidden;
     gap: 10px;
     padding-bottom: 4px;
     scroll-snap-type: x proximity;
     -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
   }
   .add-modal .acct-card { flex: 0 0 auto; width: 190px; scroll-snap-align: start; }
 
@@ -2633,8 +2663,12 @@ textarea { min-height: 76px; resize: vertical; }
   .cat-toolbar { width: 100%; }
   .cat-dd { flex: 1; }
   .stats-panel { padding: 14px; }
-  /* Push the donut down a little so the top % labels clear the Income/Expenses tabs. */
-  .ring-hero { padding-top: 30px; }
+  /* Clip donut % labels so they don't widen the page on narrow screens. */
+  .ring-hero { padding-top: 30px; overflow: hidden; width: 100%; max-width: 100%; }
+  .ring { max-width: min(268px, 100%); }
+  .ring svg { overflow: hidden; }
+
+  .trend-chart, .line-chart { max-width: 100%; }
 
   /* Compact category tiles so the amount, name and % badge don't spill in the
      two-up mobile grid. The % badge is pinned to the corner so it never gets
@@ -2648,8 +2682,8 @@ textarea { min-height: 76px; resize: vertical; }
   .cat-pct { position: absolute; top: 10px; right: 10px; font-size: 0.64rem; padding: 1px 6px; }
   .cat-tile-link { padding: 6px 12px; font-size: 0.72rem; }
 
-  /* Keep both feedback actions on a single line on phones. */
-  .feedback-actions { flex-wrap: nowrap; }
+  /* Keep both feedback actions on one row when possible; never widen the page. */
+  .feedback-actions { flex-wrap: wrap; min-width: 0; max-width: 100%; }
   .feedback-actions .feedback-btn,
   .feedback-actions .ghost {
     flex: 1 1 0;
@@ -2849,6 +2883,7 @@ textarea { min-height: 76px; resize: vertical; }
 
   /* Category filter bottom sheet */
   .modal-backdrop:has(.cat-sheet) { padding: 0; place-items: end stretch; }
+  .cat-sheet-backdrop { touch-action: none; overscroll-behavior: none; }
   .cat-sheet {
     width: 100%; height: 78dvh; max-height: 78dvh;
     background: var(--bg-elevated);
@@ -2861,11 +2896,23 @@ textarea { min-height: 76px; resize: vertical; }
     animation: sheetUp 0.24s ease both;
   }
   .cat-sheet-grab { width: 40px; height: 5px; border-radius: 3px; background: var(--border); align-self: center; margin: 2px 0 10px; }
+  .cat-sheet-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+  .cat-sheet-head .modal-x { flex: 0 0 auto; }
   .cat-sheet-title { font-size: 1rem; font-weight: 800; }
-  .cat-sheet-sub { color: var(--text-muted); font-size: 0.72rem; margin: 2px 0 10px; }
+  .cat-sheet-sub { color: var(--text-muted); font-size: 0.72rem; margin: 2px 0 0; }
   .cat-sheet-search { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 999px; margin-bottom: 6px; }
   .cat-sheet-search input { flex: 1; background: none; border: 0; outline: none; color: var(--text); font-size: 0.78rem; }
-  .cat-sheet-list { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 2px; padding-bottom: 6px; }
+  .cat-sheet-list {
+    flex: 1;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-bottom: 6px;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
   .cat-sheet-row { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: var(--radius-lg); background: none; border: 0; width: 100%; text-align: left; }
   .cat-sheet-row.on { background: var(--accent-soft); }
   .csr-ico { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; font-size: 0.88rem; flex: 0 0 auto; }

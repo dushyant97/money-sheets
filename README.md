@@ -4,7 +4,7 @@ A personal expense and income tracker built as an **offline-first** web and mobi
 
 Both the **web and mobile** apps support an **optional Turso (libSQL) cloud database** so you can sync the same ledger across devices using your own credentials. Local storage remains the default — Turso is entirely opt-in. See [Storage modes](#storage-modes).
 
-The mobile app (iOS + Android, Expo) is at **full feature parity** with the web mobile layout: five tabs (Records, Stats, Categories, Accounts, More), a **light/dark theme toggle**, ring + trends charts, editable categories/accounts, showcase mode, Excel import/export, and Turso sync. See the [mobile parity table](#web--mobile-feature-parity).
+The mobile app (iOS + Android, Expo) mirrors the web mobile layout: five tabs (**Dashboard**, **Statistics**, **Transactions**, **Accounts**, **Budgets & Data**), a **light/dark theme toggle**, ring + trends charts, editable categories/accounts, showcase mode, CSV + Excel import/export, and optional Turso sync. See the [mobile parity table](#web--mobile-feature-parity).
 
 ## What this app does
 
@@ -14,7 +14,7 @@ Money Sheets gives users a simple finance tracker across web and mobile:
 - **Mobile app:** Expo React Native
 - **Shared logic:** pure TypeScript in `shared/`
 - **Datastore:** on-device only
-- **Backup / sync:** manual export and import. The **web app reads `.csv` and `.xlsx`/`.xls` and exports `.xlsx`** (Excel) workbooks; the mobile app uses CSV.
+- **Backup / sync:** manual export and import. Both clients read `.csv`, `.xlsx`, and `.xls` and can export **CSV or Excel** (`.xlsx` workbooks on web; CSV or `.xlsx` on mobile).
 - **Import compatibility:** besides its own export, the importer also reads common spreadsheet dumps (a sheet with `Date`, `Category`, `Amount`, `Income/Expense` columns — e.g. exports from other money managers), auto-detecting the format and sorting by date.
 
 There is no sign-in step. The app opens directly to the dashboard. Data stays on the device until the user exports it.
@@ -68,7 +68,7 @@ When online with Turso active, **every edit writes straight to Turso** (one row 
 Sync is **not** real-time. Instead the app runs a cheap check — comparing the `ledger_updated_at` marker in the `settings` table, **without downloading the whole ledger** — triggered by natural interactions:
 
 - App start, and when the tab/PWA regains focus or becomes visible again (`focus` / `visibilitychange` / `pageshow`).
-- Navigating between major sections (Records → Stats → Categories → …).
+- Navigating between major sections (Dashboard → Statistics → Transactions → …).
 - Coming back online.
 
 These automatic checks are **throttled** (a 30-second cooldown) and de-duplicated, so rapid tab switching issues at most one request. A persisted *last-synced revision* baseline lets the app tell a one-sided change from a real conflict:
@@ -91,56 +91,63 @@ A **sync status** indicator (sidebar on desktop, top bar on mobile) shows a rich
 | 🔴 **Offline** | No connectivity; using local data. |
 | ⚪ **Local only** | Turso not configured. |
 
-A **Refresh** control forces an immediate check (bypassing the cooldown): desktop uses the **DATA → Refresh** action in the sidebar, and mobile shows a Refresh button beside the status pill.
+A **Refresh** control forces an immediate check (bypassing the cooldown): desktop uses the **Refresh** action in the sidebar, and mobile web shows a Refresh button beside the status pill.
 
 - **Offline:** the app falls back to the local cache and marks Turso unavailable. You can keep working; changes are saved locally and pushed automatically once you reconnect (unless a true conflict requires your choice).
 - **Switching modes** copies your current data into the target store, confirming before replacing existing data.
-- **Settings → Import from Excel file:** when Turso mode is active, you can import an Excel/CSV file and push it straight to Turso (replacing the remote database and the local cache). This is disabled while offline.
+- **Budgets & Data → Import from Excel file:** when Turso mode is active, you can import an Excel/CSV file and push it straight to Turso (replacing the remote database and the local cache). This is disabled while offline.
 
 ### Set up Turso
 
 1. Create a free database at [turso.tech](https://turso.tech) (or with the Turso CLI: `turso db create money-sheets`).
 2. Get the database URL (looks like `libsql://your-db-name.turso.io`).
 3. Create an auth token (`turso db tokens create money-sheets`).
-4. In the app, open **More → Sync Other Devices**, expand **Advanced**, paste the URL and token, and click **Test connection**.
+4. In the app, open **Budgets & Data → Sync Other Devices**, expand **Advanced**, paste the URL and token, and click **Test connection**.
 5. Click **Save & Reload**. The app creates the table if needed and uploads your current data. To add more devices afterwards, use the pairing QR described in [Sync Other Devices](#sync-other-devices-pairing) instead of retyping credentials.
 
 Your URL and token are stored only on your device (in `localStorage` on web, AsyncStorage on mobile) and are never sent anywhere except directly to your Turso database over HTTPS. Because all calls go from the client to Turso's HTTP API, this works on static hosts like GitHub Pages and inside the mobile app with no backend.
 
 ### Sync Other Devices (pairing)
 
-Once one device is connected to Turso, you can add more without retyping the long URL and token. Open **More → Sync Other Devices** on the connected device and tap **Generate pairing QR**. It shows a QR code plus a 6-digit pairing code that expires after 5 minutes. On the new device, open the same panel and (on mobile) tap **Scan QR**, point the camera at the first device, then type the 6-digit code to confirm. The receiving device tests the connection and joins the same sync — no manual typing.
+Once one device is connected to Turso, you can add more without retyping the long URL and token. Open **Budgets & Data → Sync Other Devices** on the connected device and tap **Generate pairing QR**. It shows a QR code plus a 6-digit pairing code that expires after 5 minutes.
+
+On the **new device**, open the same panel in the **web app** (including mobile-browser / PWA layout) and tap **Scan QR**, point the camera at the first device, then type the 6-digit code to confirm. The receiving device tests the connection and joins the same sync — no manual typing.
+
+> **Native mobile app (Expo):** pairing QR is not available yet. Add a device by pasting the Turso URL and auth token under **Budgets & Data → Storage**.
 
 How it stays safe without a backend:
 
 - The QR contains an **AES-256-GCM encrypted** payload, never the raw credentials. The key is derived (PBKDF2) from the 6-digit code, which is shown as text next to the QR and is **never encoded in it** — so a photo of the QR alone is useless.
 - The payload is signed with an HMAC so a tampered or non-Money-Sheets QR is rejected before decryption, and it **expires after 5 minutes** (enforced on both devices, with a small clock-skew allowance). There is no server, so security relies on physical proximity plus this short window — regenerate the QR if it lapses.
-- Desktop browsers show **Generate pairing QR** only (join a desktop via the **Advanced** section). Mobile devices can both generate and **scan**. Both options require cloud sync to be active first.
+- Desktop browsers show **Generate pairing QR** only (join a desktop via the **Advanced** section). The **Scan QR** button appears in the web app's mobile layout (narrow viewport or phone browser). Both options require cloud sync to be active first.
 - Power users can still paste a database URL and token directly under **Sync Other Devices → Advanced**.
 
 ### Turso on mobile
 
-The mobile app uses the **same** `shared/storage/` types, schema, and preferences as the web app. Setup is identical: open **More → Storage**, choose **Turso**, paste your database URL and auth token, tap **Test connection**, then **Save storage settings**.
+The mobile app uses the **same** `shared/storage/` types, schema, and preferences as the web app. Setup: open **Budgets & Data → Storage**, choose **Turso**, paste your database URL and auth token, tap **Test connection**, then **Save storage settings**.
 
 - Credentials are persisted in AsyncStorage under the same `money-sheets-storage-prefs-v1` key.
+- Turso on mobile still uses the legacy single-row `ledger_snapshot` blob (web migrates to normalized tables — see [Migration](#migration-from-the-old-single-blob-table)). Use one Turso database per client family until mobile catches up.
 - Connectivity is detected with `@react-native-community/netinfo`. When the device goes offline, the app falls back to the local AsyncStorage cache and shows Turso as unavailable; a reconnect banner offers **push local / use cloud** when the copies diverge.
 - The libSQL client (`@libsql/client`) talks to Turso over HTTPS via `fetch`, and is lazy-imported so offline-only installs don't pay its cost.
 
 ## Web & mobile feature parity
 
-The mobile app mirrors the web mobile layout. As of v2.0.0:
+The mobile app mirrors the web mobile layout. Tab ids live in `shared/nav.ts`; labels are **Dashboard**, **Statistics**, **Transactions**, **Accounts**, and **Budgets & Data**.
 
 | Area | Web (mobile layout) | Mobile (iOS + Android) |
 | --- | --- | --- |
-| Tabs | Records, Stats, Categories, Accounts, More | ✅ Same five tabs with per-tab accent tints |
+| Tabs | Dashboard, Statistics, Transactions, Accounts, Budgets & Data | ✅ Same five tabs with per-tab accent tints |
 | Theme | Light + dark toggle | ✅ Light + dark toggle (persisted) |
 | Storage | Local + Turso + offline fallback | ✅ Local + Turso + offline fallback |
-| Reconnect banner | Push local / pull cloud | ✅ Push local / use cloud |
-| Stats | KPIs, ring breakdown, trends line chart | ✅ KPIs, ring (react-native-svg), trends |
-| Records | Filters card, calendar day modal, row edit/delete | ✅ Same |
-| Add | Direct amount + calculator, calendar date picker | ✅ Same |
-| Categories | Picker, hero card, compact list, inline editor | ✅ Same |
+| Sync status | Rich pill (up to date / checking / conflict / offline) + Refresh | ✅ Storage status line + reconnect banner |
+| Device pairing (QR) | Generate + scan on mobile web layout | Manual Turso credentials only (no QR scanner) |
+| Dashboard | KPI cards, calendar, top categories, recent transactions + filters | ✅ Summary strip, calendar / summary views, day modal |
+| Statistics | KPIs, ring breakdown, trends line chart | ✅ KPIs, ring (react-native-svg), trends |
+| Transactions | Category filter sheet, search, date-grouped list, scroll-to-top | ✅ Same (`CategoryFilterSheet`, `TransactionGroups`) |
+| Add record | Full-screen sheet: type toggle, description autocomplete, calculator, receipt | ✅ Full-screen modal: `DD/MM/YYYY` date field, note suggestions, calculator |
 | Accounts | Editable cards (name, emoji, color, currency, opening) | ✅ Same |
+| Budgets & Data | Storage, sync, budgets, manage, import/export, settings | ✅ Same (storage panel, budgets, manage, backup) |
 | Showcase mode | Demo data with confirmation | ✅ Same |
 | Import / export | CSV + Excel with progress | ✅ CSV + Excel with progress overlay |
 | Branding | ₹/bar-chart purple-gradient mark | ✅ Matching icon, adaptive icon, splash |
@@ -188,10 +195,12 @@ sequenceDiagram
 
 ```text
 Open app
--> Load ledger from local storage
--> View Trans. / Stats / Accounts / More
+-> Load ledger from active storage (local or Turso)
+-> Dashboard: month KPIs, calendar, recent activity
+-> Transactions: browse/filter the month's ledger by category
+-> Statistics / Accounts / Budgets & Data as needed
 -> Add, edit, or soft-delete transactions
--> Changes saved immediately to local storage
+-> Changes saved immediately to storage
 ```
 
 ### App screens
@@ -199,25 +208,31 @@ Open app
 ```mermaid
 flowchart LR
   Top[Top bar] --> Theme[Light / dark theme toggle]
-  T[Trans.] --> Add[Add / edit transaction]
-  Add --> Calc[Calculator amount entry]
-  T --> Calendar[Calendar / weekly / monthly views<br/>month-scoped records]
-  S[Stats] --> Breakdown[Breakdown: donut ring + category tiles<br/>tap a category to hide]
-  S --> Trends[Trends: per-category line chart<br/>week / month / year]
+  Top --> Month[Month navigator]
+  D[Dashboard] --> KPIs[Income / expense / balance cards]
+  D --> Calendar[Calendar grid + day modal]
+  D --> Recent[Recent transactions + search/filters]
+  Tx[Transactions] --> CatFilter[Category filter sheet + search]
+  Tx --> Groups[Date-grouped transaction list]
+  S[Statistics] --> Breakdown[Donut ring + category tiles]
+  S --> Trends[Per-category line chart<br/>week / month / year]
   A[Accounts] --> Balances[Balances<br/>month-scoped or running]
-  M[More] --> Settings[Settings: carry forward]
+  M[Budgets & Data] --> Storage[Local / Turso storage]
+  M --> Sync[Sync other devices — web only]
+  M --> Settings[Carry forward + showcase]
   M --> Manage[Manage categories & accounts]
-  M --> Budgets[Budgets]
-  M --> Export[Export Excel .xlsx]
+  M --> Budgets[Monthly budgets]
+  M --> Export[Export CSV / Excel]
   M --> Import[Import CSV / Excel]
   M --> Erase[Erase all data]
 
-  Add --> Store[(Local storage)]
+  Add[Add / edit record] --> Calc[Calculator + note suggestions]
+  Add --> Store[(Local / Turso storage)]
   Manage --> Store
   Settings --> Store
   Budgets --> Store
   Theme --> Store
-  Export --> File[.xlsx workbook]
+  Export --> File[.csv or .xlsx]
   Import --> Store
 ```
 
@@ -225,15 +240,15 @@ flowchart LR
 
 ### Export
 
-1. Open **More** (or the sidebar on web).
-2. Tap **Export Excel** (web) / **Export CSV** (mobile).
+1. Open **Budgets & Data** (or the sidebar on web).
+2. Tap **Export Excel** (web sidebar) or **Export CSV** / **Export Excel (.xlsx)** (mobile).
 3. **Web:** a dialog asks where to save the workbook:
    - **Download to default location** — saves `money-sheets.xlsx` to your Downloads folder (works in every browser).
    - **Choose a location…** — pick a file to create or replace on your device (Chrome/Edge, via the
      File System Access API). In Safari and Firefox only the default download is offered.
 
    A progress overlay shows while the workbook is built.
-4. **Mobile:** opens the system share sheet so the user can save or send a CSV file. *(Mobile export is unchanged in this release.)*
+4. **Mobile:** opens the system share sheet so the user can save or send a CSV or `.xlsx` file.
 
 The web workbook (`money-sheets.xlsx`) contains:
 
@@ -245,7 +260,7 @@ Both formats open in Excel, LibreOffice, or Google Sheets.
 
 ### Import
 
-1. Open **More** → **Import CSV / Excel** (web) / **Import CSV** (mobile).
+1. Open **Budgets & Data** → **Import CSV / Excel** (web sidebar or mobile backup card).
 2. Choose a file:
    - On **web**, you can pick `.csv`, `.xlsx`, or `.xls`.
    - It can be a previous Money Sheets export, **or** a spreadsheet from another money manager
@@ -299,11 +314,11 @@ Use this checklist when joining the project or standing up a new environment.
 | Storage key | `money-sheets-ledger-v1` |
 | Is there a custom backend? | No |
 | How do web and mobile sync? | Manual CSV / Excel export/import by the user |
-| Where is shared business logic? | `shared/finance.ts`, `shared/uiHelpers.ts`, `shared/theme.ts`, `shared/nav.ts`, `shared/ledgerStore.ts`, `shared/csvImport.ts`, `shared/storage/` |
-| Where is persistence? | `web/src/storage/`, `mobile/src/storage/` (local + Turso adapters behind a shared interface) |
+| Where is shared business logic? | `shared/finance.ts`, `shared/uiHelpers.ts`, `shared/theme.ts`, `shared/nav.ts`, `shared/ledgerStore.ts`, `shared/csvImport.ts`, `shared/spreadsheetExport.ts`, `shared/spreadsheetImport.ts`, `shared/showcaseData.ts`, `shared/pairing/`, `shared/sync/`, `shared/storage/` |
+| Where is persistence? | `web/src/storage/`, `mobile/src/storage/` (local + Turso adapters behind a shared interface; web Turso uses normalized tables) |
 | Where is app state? | `web/src/ledger.tsx`, `mobile/src/context/LedgerContext.tsx` |
 | Where is the theme? | Web: `web/src/theme.tsx` + CSS vars in `web/src/styles.css`. Mobile: `mobile/src/theme/ThemeProvider.tsx` + tokens in `shared/theme.ts` |
-| Where is Excel read/write? | `web/src/spreadsheet.ts` and `mobile/src/spreadsheet.ts` (SheetJS, lazy-loaded) |
+| Where is Excel read/write? | `web/src/spreadsheet.ts` and `mobile/src/spreadsheet.ts` (SheetJS wrappers; workbook layout in `shared/spreadsheetExport.ts`) |
 
 ### 2. No Google Cloud setup required
 
@@ -346,6 +361,7 @@ Other useful commands:
 
 ```bash
 npm run typecheck
+npm run test
 npm run build
 npm run preview
 ```
@@ -379,7 +395,7 @@ Expo Go works for basic UI testing. Document picker import is most reliable on a
 | `expo-document-picker` | Pick CSV / Excel file for import |
 | `expo-file-system` | Read picked file contents; write export files |
 | `expo-sharing` | Share exported CSV / Excel files |
-| `react-native-svg` | Render the Stats ring breakdown and trends line chart |
+| `react-native-svg` | Render the Statistics ring breakdown and trends line chart |
 | `xlsx` (SheetJS) | Read/write `.xlsx` on import/export (lazy-imported) |
 
 > **Expo Go note:** this project targets **Expo SDK 56**, so use the latest **Expo Go** from the
@@ -392,7 +408,11 @@ Expo Go works for basic UI testing. Document picker import is most reliable on a
 | --- | --- |
 | `react`, `react-dom` | UI |
 | `vite`, `@vitejs/plugin-react` | Dev server & production build |
+| `vite-plugin-pwa` | Service worker + web manifest (installable PWA) |
+| `@libsql/client` | Optional Turso cloud sync over HTTPS |
+| `qrcode.react`, `@yudiel/react-qr-scanner` | Device pairing QR generate / scan (lazy-loaded) |
 | `xlsx` (SheetJS) | Read `.xlsx`/`.xls` on import and write `.xlsx` on export. Imported via dynamic `import()` in `web/src/spreadsheet.ts`, so it ships as a **separate lazy-loaded chunk** and stays out of the initial bundle. |
+| `vitest` | Unit tests for `shared/` sync, storage, pairing, and spreadsheet helpers |
 
 > **SheetJS install note:** the maintained build is published on the SheetJS CDN
 > (`npm i https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`). If your network blocks that CDN
@@ -415,6 +435,8 @@ flowchart TB
     Finance[shared/finance.ts<br/>summaries, filters, trends, export rows]
     Ledger[shared/ledgerStore.ts<br/>snapshot, CRUD helpers]
     Csv[shared/csvImport.ts<br/>multi-format CSV parse]
+    Xlsx[shared/spreadsheetExport.ts<br/>workbook layout]
+    Pair[shared/pairing/<br/>QR credential exchange]
     UI[shared/uiHelpers.ts<br/>chart palette, ring arcs, formatters]
     Theme[shared/theme.ts]
   end
@@ -441,37 +463,47 @@ flowchart TB
 ### Repository layout
 
 ```text
-money-sheets-starter/
+UNO_POC/
 ├── shared/
-│   ├── finance.ts          # Types, summaries, filters, balances, carry-forward, trends, export rows
-│   ├── ledgerStore.ts      # LedgerSnapshot, settings, defaults, CRUD, import merge
-│   ├── csvImport.ts        # parseTransactionsCsv (native + generic/Money-Manager formats, date sort)
-│   ├── calc.ts             # Safe calculator expression evaluator (shared by web + mobile)
-│   ├── uiHelpers.ts        # Category meta, CHART_PALETTE, ring/pie geometry, money formatters
-│   ├── nav.ts              # Shared NAV tabs (id, label, icon, tint) for web + mobile
-│   ├── theme.ts            # Light + dark palettes (ThemePalette), design tokens
-│   ├── storage/            # Storage abstraction: types, prefs, Turso SQL schema
-│   └── sync/               # Pure sync logic: revisions (compare), cooldown, sync-state map
+│   ├── finance.ts              # Types, summaries, filters, balances, carry-forward, trends, export rows
+│   ├── ledgerStore.ts          # LedgerSnapshot, settings, defaults, CRUD, import merge
+│   ├── csvImport.ts            # parseTransactionsCsv (native + generic formats, date sort)
+│   ├── spreadsheetExport.ts    # Multi-sheet workbook row layout (platform-agnostic)
+│   ├── spreadsheetImport.ts    # Resolve which worksheet to import from a workbook
+│   ├── showcaseData.ts         # Demo ledger for showcase mode
+│   ├── calc.ts                 # Safe calculator expression evaluator (shared by web + mobile)
+│   ├── uiHelpers.ts            # Category meta, CHART_PALETTE, ring/pie geometry, money formatters
+│   ├── nav.ts                  # Shared NAV tabs (id, label, icon, tint) for web + mobile
+│   ├── theme.ts                # Light + dark palettes (ThemePalette), design tokens
+│   ├── pairing/                # AES-GCM pairing payloads + HMAC for Sync Other Devices (web)
+│   ├── storage/                # Normalized Turso schema, repository, migration, prefs
+│   └── sync/                   # Pure sync logic: revisions, cooldown, sync-state map (web)
 ├── web/
 │   └── src/
-│       ├── App.tsx                 # Shell, Transactions, Stats (ring + trends), Accounts, More
-│       ├── Calculator.tsx          # Calculator modal (amount entry)
-│       ├── theme.tsx               # Light/dark ThemeProvider + useTheme (persisted, no-FOUC)
-│       ├── spreadsheet.ts          # SheetJS read (.csv/.xlsx) + .xlsx export (lazy-loaded)
-│       ├── ledger.tsx              # React context, load/save/import/export, settings, storage, sync
-│       ├── sync/                   # useSync hook + useSyncTriggers (focus/visibility/nav checks)
-│       └── storage/                # localAdapter, tursoAdapter, prefsStore, syncMetaStore, activeStorage, switchMode
+│       ├── App.tsx                     # Shell: Dashboard, Statistics, Transactions, Accounts, Budgets & Data
+│       ├── Calculator.tsx              # Calculator modal (amount entry)
+│       ├── theme.tsx                   # Light/dark ThemeProvider + useTheme (persisted, no-FOUC)
+│       ├── spreadsheet.ts              # SheetJS read (.csv/.xlsx) + .xlsx export (lazy-loaded)
+│       ├── ledger.tsx                  # React context, load/save/import/export, storage, sync
+│       ├── components/
+│       │   ├── CategoryFilterSheet.tsx # Bottom sheet category picker (Transactions tab)
+│       │   ├── MobileTxnRow.tsx        # Compact transaction row for mobile layout
+│       │   ├── ScrollTopButton.tsx     # Floating scroll-to-top on long lists
+│       │   ├── SyncStatusBar.tsx       # Turso sync pill + Refresh
+│       │   └── syncDevices/            # QR pairing UI (generate / scan / advanced)
+│       ├── sync/                       # useSync hook + useSyncTriggers (focus/visibility/nav checks)
+│       └── storage/                    # localAdapter, tursoAdapter, prefs, activeStorage, switchMode
 └── mobile/
-    ├── assets/                     # icon.png, adaptive-icon.png, splash.png
+    ├── assets/                         # icon.png, adaptive-icon.png, splash.png
     └── src/
         ├── context/
-        │   └── LedgerContext.tsx   # Web-parity context (storage, Turso, showcase, import)
+        │   └── LedgerContext.tsx       # Web-parity context (storage, Turso, showcase, import)
         ├── theme/
-        │   └── ThemeProvider.tsx   # Light/dark provider + useTheme (persisted)
-        ├── storage/                # localAdapter (AsyncStorage), tursoAdapter, prefs, activeStorage, switchMode
-        ├── spreadsheet.ts          # CSV + Excel read/write (SheetJS, lazy-loaded)
-        ├── screens/                # Trans, Stats, Categories, Accounts, More, AddTransaction
-        └── components/             # AppHeader, BottomNav, MonthNav, charts, modals, Calculator
+        │   └── ThemeProvider.tsx       # Light/dark provider + useTheme (persisted)
+        ├── storage/                    # localAdapter (AsyncStorage), tursoAdapter (snapshot blob), prefs
+        ├── spreadsheet.ts              # CSV + Excel read/write (SheetJS, lazy-loaded)
+        ├── screens/                    # Dashboard, Statistics, Transactions, Accounts, Budgets & Data, Add
+        └── components/                 # AppHeader, BottomNav, CategoryFilterSheet, TransactionGroups, charts
 ```
 
 ### Design principles
@@ -636,8 +668,9 @@ Rows remain in storage for possible future undelete or audit features.
 
 ## Import & export formats
 
-- **Export rows** are built by `transactionsToRows()` in `shared/finance.ts` (shared by the CSV
-  string builder `exportTransactionsCsv()` and the web `.xlsx` writer in `web/src/spreadsheet.ts`).
+- **Export rows** are built by `transactionsToRows()` in `shared/finance.ts` (shared by CSV export,
+  the `.xlsx` writer in `web/src/spreadsheet.ts` / `mobile/src/spreadsheet.ts`, and the workbook
+  layout in `shared/spreadsheetExport.ts`).
 - **Import** uses `parseTransactionsCsv()` in `shared/csvImport.ts`. On web, Excel files are first
   converted to CSV by `readTransactionsFromFile()` (SheetJS), then handed to the same parser.
 
@@ -697,49 +730,49 @@ How these rows are mapped:
 - **No sign-in** — app loads immediately
 - **Offline storage** — web `localStorage`, mobile AsyncStorage; **optional Turso cloud sync** on both
 - **Light / dark theme** toggle on web and mobile
-- **Tabs:** Records, Stats, Categories, Accounts, More (web and mobile)
-- **Transactions:** add, edit, soft-delete
-- **Month-scoped records** — the transaction list always shows only the selected month
-- **Custom categories** — create/remove income and expense categories (More → Manage)
-- **Custom accounts** — create/remove accounts with currency and opening balance
+- **Tabs:** Dashboard, Statistics, Transactions, Accounts, Budgets & Data (web and mobile; labels from `shared/nav.ts`)
+- **Dashboard** — month KPI cards with sparklines (web), summary strip (mobile), calendar grid with day modal, top expense categories, and a filterable recent-transactions column (web)
+- **Transactions** — browse the selected month by category: filter sheet, search, date-grouped collapsible list, inline category editor, scroll-to-top on long lists
+- **Add / edit record** — full-screen sheet with income/expense toggle, description autocomplete from past notes, built-in calculator, category/account pickers, optional receipt (web: URL or image data URL)
+- **Custom categories** — create/edit/remove income and expense categories (Budgets & Data → Manage)
+- **Custom accounts** — create/edit/remove accounts with emoji, color, currency, and opening balance
 - **Built-in calculator** — tap the amount field to enter values with a `+ − × ÷` calculator (safe expression evaluation, no `eval`)
 - **Monthly carry forward** — optional setting (off by default) to carry the running balance into the next month
 - **Income and expense** tracking with category chips
 - **Account balances** with opening balance support (month-scoped or running, per carry-forward setting)
-- **Stats:** KPI cards (income, expense, net, savings rate with month-over-month deltas), a donut
+- **Statistics:** KPI cards (income, expense, net, savings rate with month-over-month deltas), a donut
   ring breakdown with category highlight, and a per-category trends line chart (week / month / year)
-- **Categories tab** — pick a category to see its monthly transactions and edit name/emoji/color
-- **Calendar, weekly, monthly, summary** views; tap a calendar day for that day's transactions
-- **Date headers** in the records list show the weekday and full date with the day's net total
-- **Monthly budgets** with progress (More tab)
+- **Date headers** in transaction groups show the weekday, full date, and daily net total
+- **Monthly budgets** with progress (Budgets & Data tab)
 - **Showcase mode** — load demo data to explore the app (with confirmation)
-- **Excel + CSV export** and **import** (with a progress overlay on large files)
+- **CSV + Excel export** and **import** (with a progress overlay on large files)
 - **Erase all data** — reset to default empty ledger
-- **Receipt URL** field on transactions
+- **Receipt URL** field on transactions (web also supports attaching an image as a data URL)
 - **Modern UI with light/dark themes**, consistent across web and mobile
 
 | Personal-finance workflow | Money Sheets implementation |
 | --- | --- |
-| Transaction tracking | `transactions` in local ledger |
-| Account tracking | `accounts` + Accounts tab, custom accounts in More |
-| Category analysis | Stats tab + `shared/finance.ts` |
-| Custom categories / accounts | More → Manage categories & accounts |
+| Month-at-a-glance | Dashboard tab |
+| Transaction ledger | Transactions tab (category filter + search) |
+| Account tracking | `accounts` + Accounts tab, custom accounts in Budgets & Data |
+| Category analysis | Statistics tab + `shared/finance.ts` |
+| Custom categories / accounts | Budgets & Data → Manage categories & accounts |
 | Amount entry | In-app calculator (`shared/calc.ts`) |
-| Budgets | `budgets` + More tab |
-| Calendar review | Trans. tab calendar view |
+| Budgets | `budgets` + Budgets & Data tab |
+| Calendar review | Dashboard calendar + day modal |
 | Monthly carry forward | `settings.carryForward` + Settings toggle |
-| Export | CSV export |
-| Backup / restore | CSV import |
+| Export | CSV or Excel (`.xlsx`) |
+| Backup / restore | CSV or Excel import |
 | Receipts | `receiptUrl` field |
 
 ### Monthly carry forward
 
-By default each month is **independent**: the Trans. balance and account balances reflect only the
+By default each month is **independent**: Dashboard balances and account balances reflect only the
 selected month's income and expense. Nothing rolls into the next month.
 
-Enable **More → Settings → Monthly carry forward** to switch to a **running balance**:
+Enable **Budgets & Data → Settings → Monthly carry forward** to switch to a **running balance**:
 
-- The Trans. summary adds the net of all previous months (plus account opening balances) as
+- The Dashboard summary adds the net of all previous months (plus account opening balances) as
   "brought forward".
 - The Accounts tab shows balances accumulated up to and including the selected month.
 
@@ -979,7 +1012,7 @@ There is no live sync between platforms.
 
 The CSV must include the exact header row from an Money Sheets export.
 
-**Fix:** Re-export from the app or add the missing columns to match the [CSV format](#csv-format).
+**Fix:** Re-export from the app or add the missing columns to match the [import formats](#import--export-formats).
 
 ### Import fails with "No valid transaction rows"
 
@@ -991,7 +1024,7 @@ The file may be empty, use a different delimiter, or have invalid rows (missing 
 
 Budgets are not part of the CSV format. Import resets budgets to empty.
 
-**Fix:** Re-enter budgets in the More tab, or implement JSON full-backup (see extensions).
+**Fix:** Re-enter budgets in the Budgets & Data tab, or implement JSON full-backup (see extensions).
 
 ### Mobile import does nothing
 
@@ -1008,9 +1041,10 @@ Very large ledgers (thousands of transactions) may hit browser storage limits (~
 - **JSON full backup** — export/import budgets, accounts, and categories in one file
 - **Recurring transactions**
 - **Multi-currency exchange rates**
-- **Optional cloud sync** — iCloud, Google Drive folder, or self-hosted API (would reintroduce cloud setup)
+- **Mobile Turso normalized schema** — match web's per-row writes and lightweight sync
+- **Mobile device pairing** — QR scan in the native Expo app
 - **IndexedDB on web** — larger storage quota than `localStorage`
-- **Import from other trackers** — map third-party CSV columns to the Money Sheets format
+- **Import from other trackers** — additional third-party CSV column maps
 - **Undelete** UI for soft-deleted transactions
 - **Encryption at rest** — password-protected local ledger
 - **Household / shared ledgers** — would need sync or shared file workflow
