@@ -102,6 +102,16 @@ import { buildShowcaseLedger } from '../../shared/showcaseData';
 export type MainTab = 'trans' | 'stats' | 'categories' | 'accounts' | 'more';
 export type HomeView = 'calendar' | 'weekly' | 'monthly' | 'summary';
 export type LoadPhase = 'loading' | 'ready' | 'error';
+/**
+ * Sub-screen within the mobile "Budgets & Data" tab. `null` shows the 5-card
+ * hub; the others are full-height pushed screens with a back affordance.
+ */
+export type MoreSubScreen =
+  | null
+  | 'sync-advanced'
+  | 'monthly-budgets'
+  | 'library-categories'
+  | 'library-accounts';
 
 /**
  * Case 4: both this device and Turso hold data, so the user must choose which
@@ -171,6 +181,8 @@ type LedgerState = {
   lastSyncedAt: string | null;
   conflict: ConflictInfo | null;
   mainTab: MainTab;
+  /** Active sub-screen within the mobile Budgets & Data tab (null = hub). */
+  moreSubScreen: MoreSubScreen;
   homeView: HomeView;
   selectedMonth: Date;
   filters: TransactionFilters;
@@ -180,6 +192,9 @@ type LedgerState = {
   /** Category the user asked to inspect from the Stats view (one-shot). */
   categoryFocus: string | null;
   setMainTab: (tab: MainTab) => void;
+  setMoreSubScreen: (screen: MoreSubScreen) => void;
+  /** Jump straight to a Library sub-screen on the Budgets & Data tab. */
+  openMoreLibrary: (which: 'categories' | 'accounts') => void;
   setHomeView: (view: HomeView) => void;
   setSelectedMonth: (date: Date) => void;
   setFilters: (filters: TransactionFilters) => void;
@@ -209,10 +224,10 @@ type LedgerState = {
   startEdit: (transaction: Transaction) => void;
   cancelEdit: () => void;
   saveBudget: (category: string, amount: string) => Promise<void>;
-  addAccount: (name: string, currency: string, openingBalance: string) => Promise<void>;
+  addAccount: (name: string, currency: string, openingBalance: string, extras?: { emoji?: string; color?: string }) => Promise<void>;
   updateAccount: (originalName: string, patch: AccountPatch) => Promise<void>;
   deleteAccount: (name: string) => Promise<void>;
-  addCategory: (name: string, type: TransactionType) => Promise<void>;
+  addCategory: (name: string, type: TransactionType, extras?: { emoji?: string; color?: string }) => Promise<void>;
   updateCategory: (originalName: string, patch: CategoryPatch) => Promise<void>;
   deleteCategory: (name: string) => Promise<void>;
   setCarryForward: (value: boolean) => Promise<void>;
@@ -286,6 +301,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   const lastSyncCheckAtRef = useRef<number | null>(null);
   const inFlightCheckRef = useRef<Promise<void> | null>(null);
   const [mainTab, setMainTab] = useState<MainTab>('trans');
+  const [moreSubScreen, setMoreSubScreen] = useState<MoreSubScreen>(null);
   const [homeView, setHomeView] = useState<HomeView>('calendar');
   const [selectedMonth, setSelectedMonth] = useState(() => new Date());
   const [filters, setFilters] = useState<TransactionFilters>({ type: 'all' });
@@ -327,6 +343,15 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   // updates — throttled so rapid switching issues at most one request.
   function navigateTab(tab: MainTab) {
     setMainTab(tab);
+    // Leaving the Budgets & Data tab resets its sub-screen back to the hub.
+    setMoreSubScreen(null);
+    void checkForUpdates();
+  }
+
+  /** Deep-link into a Library sub-screen from elsewhere (e.g. the Add sheet). */
+  function openMoreLibrary(which: 'categories' | 'accounts') {
+    setMainTab('more');
+    setMoreSubScreen(which === 'categories' ? 'library-categories' : 'library-accounts');
     void checkForUpdates();
   }
 
@@ -827,7 +852,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  async function addAccount(name: string, currency: string, openingBalance: string) {
+  async function addAccount(name: string, currency: string, openingBalance: string, extras?: { emoji?: string; color?: string }) {
     if (!snapshot) return;
     setBusy(true);
     try {
@@ -835,7 +860,9 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
         name,
         currency,
         openingBalance: Number(openingBalance) || 0,
-        active: true
+        active: true,
+        emoji: extras?.emoji,
+        color: extras?.color
       });
       const account = next.accounts[next.accounts.length - 1];
       await persist(next, { kind: 'saveAccount', account });
@@ -888,11 +915,11 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  async function addCategory(name: string, type: TransactionType) {
+  async function addCategory(name: string, type: TransactionType, extras?: { emoji?: string; color?: string }) {
     if (!snapshot) return;
     setBusy(true);
     try {
-      const next = addCategoryToLedger(snapshot, { name, type, active: true });
+      const next = addCategoryToLedger(snapshot, { name, type, active: true, emoji: extras?.emoji, color: extras?.color });
       const category = next.categories[next.categories.length - 1];
       await persist(next, { kind: 'saveCategory', category });
       setMessage(`Category "${name.trim()}" added.`);
@@ -1349,6 +1376,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     lastSyncedAt,
     conflict,
     mainTab,
+    moreSubScreen,
     homeView,
     selectedMonth,
     filters,
@@ -1357,6 +1385,8 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     showAdd,
     categoryFocus,
     setMainTab: navigateTab,
+    setMoreSubScreen,
+    openMoreLibrary,
     setHomeView,
     setSelectedMonth,
     setFilters,

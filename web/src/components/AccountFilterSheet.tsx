@@ -74,7 +74,6 @@ export function AccountFilterSheet({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search accounts"
-            autoFocus
           />
         </div>
         <div className="cat-sheet-list">

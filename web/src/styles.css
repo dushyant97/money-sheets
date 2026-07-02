@@ -257,7 +257,7 @@ a { color: inherit; text-decoration: none; }
 .nav-label {
   padding: 0 10px;
   font-size: 0.66rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-dim);
@@ -501,7 +501,7 @@ a { color: inherit; text-decoration: none; }
   border-radius: 999px;
   background: linear-gradient(140deg, var(--accent), var(--accent-2));
   color: #fff;
-  font-weight: 800;
+  font-weight: 600;
   font-size: 0.92rem;
   box-shadow: 0 12px 28px -10px var(--accent-glow);
   transition: transform 0.08s, box-shadow 0.2s;
@@ -596,7 +596,7 @@ a { color: inherit; text-decoration: none; }
 .summary-card .sc-head span:first-child {
   color: var(--text-muted);
   font-size: 0.72rem;
-  font-weight: 800;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -621,7 +621,7 @@ a { color: inherit; text-decoration: none; }
 .summary-card.average .sc-ico { background: var(--accent-soft); color: var(--accent); }
 .summary-card .sc-chart { margin-top: 6px; height: 34px; }
 .sparkline { width: 100%; height: 34px; display: block; }
-.sc-delta { font-weight: 800; }
+.sc-delta { font-weight: 600; }
 .sc-delta.up { color: var(--income); }
 .sc-delta.down { color: var(--expense); }
 
@@ -700,7 +700,7 @@ a { color: inherit; text-decoration: none; }
   background: var(--accent-soft);
   color: var(--accent);
   border: 1px solid transparent;
-  font-weight: 800;
+  font-weight: 600;
   font-size: 0.85rem;
   white-space: nowrap;
 }
@@ -715,7 +715,7 @@ a { color: inherit; text-decoration: none; }
   background: var(--danger);
 }
 .filter-extra { display: grid; gap: 10px; padding: 14px 18px; }
-.fe-label { color: var(--text-dim); font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; }
+.fe-label { color: var(--text-dim); font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
 .radio-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .radio-pill {
   display: inline-flex;
@@ -747,7 +747,7 @@ a { color: inherit; text-decoration: none; }
   border-radius: 999px;
   background: var(--accent-soft);
   color: var(--accent);
-  font-weight: 800;
+  font-weight: 600;
   font-size: 0.82rem;
 }
 .view-all-btn:hover { background: var(--accent); color: var(--btn-text); }
@@ -785,7 +785,7 @@ a { color: inherit; text-decoration: none; }
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  font-weight: 800;
+  font-weight: 600;
 }
 .panel-head h3 { margin: 0; }
 
@@ -814,7 +814,7 @@ textarea { min-height: 76px; resize: vertical; }
   color: var(--btn-text);
   border-radius: var(--radius-md);
   padding: 12px 16px;
-  font-weight: 800;
+  font-weight: 600;
   box-shadow: var(--btn-shadow);
   transition: transform 0.08s, box-shadow 0.2s;
 }
@@ -845,7 +845,7 @@ textarea { min-height: 76px; resize: vertical; }
   gap: 6px;
 }
 .calendar-weekdays { margin-bottom: 8px; }
-.calendar-weekdays span { text-align: center; color: var(--text-dim); font-size: 0.68rem; font-weight: 800; }
+.calendar-weekdays span { text-align: center; color: var(--text-dim); font-size: 0.68rem; font-weight: 600; }
 
 .calendar-cell {
   aspect-ratio: 1;
@@ -864,7 +864,7 @@ textarea { min-height: 76px; resize: vertical; }
 .calendar-cell.muted { opacity: 0.3; }
 .calendar-cell.today { box-shadow: inset 0 0 0 1.5px var(--warn); background: rgba(251, 191, 36, 0.12); }
 .calendar-cell.has-data { background: linear-gradient(160deg, rgba(91, 157, 255, 0.12), var(--bg-elevated)); }
-.calendar-cell em { font-style: normal; font-size: 0.58rem; font-weight: 800; }
+.calendar-cell em { font-style: normal; font-size: 0.58rem; font-weight: 600; }
 .calendar-cell.btn {
   cursor: pointer;
   padding: 0;
@@ -911,13 +911,13 @@ textarea { min-height: 76px; resize: vertical; }
   border-radius: var(--radius-md);
   background: var(--surface-hover);
   color: var(--text);
-  font-weight: 800;
+  font-weight: 600;
   font-size: 1rem;
 }
 .txn-date-meta { display: grid; line-height: 1.25; }
 .txn-date-meta strong { font-size: 0.82rem; color: var(--text); font-weight: 700; }
 .txn-date-meta span { font-size: 0.72rem; color: var(--text-muted); }
-.txn-group-head .day-net { font-size: 0.78rem; font-weight: 800; color: var(--text-muted); }
+.txn-group-head .day-net { font-size: 0.78rem; font-weight: 600; color: var(--text-muted); }
 
 .txn-row {
   display: grid;
@@ -945,7 +945,7 @@ textarea { min-height: 76px; resize: vertical; }
 .txn-body span { color: var(--text-muted); font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .txn-end { text-align: right; display: grid; gap: 4px; justify-items: end; }
-.txn-end em { font-style: normal; font-weight: 800; font-size: 0.92rem; }
+.txn-end em { font-style: normal; font-weight: 600; font-size: 0.92rem; }
 .txn-end em.income { color: var(--income); }
 .txn-end em.expense { color: var(--expense); }
 
@@ -1172,7 +1172,7 @@ textarea { min-height: 76px; resize: vertical; }
   align-self: flex-start;
   color: var(--text);
   font-size: 0.8rem;
-  font-weight: 800;
+  font-weight: 600;
   padding: 2px 8px;
   border-radius: 999px;
   background: var(--bg-elevated);
@@ -1274,7 +1274,7 @@ textarea { min-height: 76px; resize: vertical; }
   display: block;
   padding: 6px 8px 4px;
   font-size: 0.66rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-dim);
@@ -1443,10 +1443,10 @@ textarea { min-height: 76px; resize: vertical; }
 .account-card .acct-badge {
   width: 36px; height: 36px; border-radius: 10px;
   display: grid; place-items: center;
-  background: var(--accent-soft); color: var(--accent); font-weight: 800;
+  background: var(--accent-soft); color: var(--accent); font-weight: 600;
 }
 .account-card h3 { margin: 0; font-size: 0.98rem; text-transform: none; letter-spacing: 0; color: var(--text); }
-.account-card .acct-balance { font-size: 1.55rem; font-weight: 800; letter-spacing: -0.02em; }
+.account-card .acct-balance { font-size: 1.55rem; font-weight: 600; letter-spacing: -0.02em; }
 .account-card .acct-flows { display: flex; gap: 14px; font-size: 0.76rem; }
 .account-card .acct-flows .muted { color: var(--text-dim); }
 
@@ -1463,7 +1463,7 @@ textarea { min-height: 76px; resize: vertical; }
 .budget-row .b-head strong { font-size: 0.92rem; }
 .budget-row.over { box-shadow: inset 0 0 0 1px rgba(255, 93, 108, 0.4); }
 
-.badge { padding: 4px 11px; border-radius: 999px; background: rgba(91, 157, 255, 0.16); color: var(--balance); font-size: 0.72rem; font-weight: 800; }
+.badge { padding: 4px 11px; border-radius: 999px; background: rgba(91, 157, 255, 0.16); color: var(--balance); font-size: 0.72rem; font-weight: 600; }
 .badge.danger { background: rgba(255, 93, 108, 0.16); color: var(--danger); }
 .badge.good { background: rgba(52, 226, 155, 0.16); color: var(--income); }
 
@@ -1568,7 +1568,7 @@ textarea { min-height: 76px; resize: vertical; }
   background: var(--surface);
   border: 1px solid transparent;
   color: var(--text-muted);
-  font-weight: 800;
+  font-weight: 600;
   text-align: center;
   transition: all 0.15s;
 }
@@ -1590,7 +1590,7 @@ textarea { min-height: 76px; resize: vertical; }
 }
 .amount-currency {
   font-size: 1.1rem;
-  font-weight: 800;
+  font-weight: 600;
   color: var(--text-dim);
   flex-shrink: 0;
 }
@@ -1851,13 +1851,13 @@ textarea { min-height: 76px; resize: vertical; }
   background: linear-gradient(90deg, var(--accent), var(--accent-2));
   transition: width 0.18s ease;
 }
-.import-pct { text-align: right; font-weight: 800; font-size: 0.9rem; color: var(--text-muted); }
+.import-pct { text-align: right; font-weight: 600; font-size: 0.9rem; color: var(--text-muted); }
 
 /* ---------- Storage settings ---------- */
 .storage-panel { display: grid; gap: 12px; }
 .storage-section-label {
   font-size: 0.68rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-dim);
@@ -1893,7 +1893,7 @@ textarea { min-height: 76px; resize: vertical; }
   padding: 4px 10px;
   border-radius: 999px;
   font-size: 0.62rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.06em;
 }
 .storage-badge.ok { color: var(--income); background: color-mix(in srgb, var(--income) 16%, transparent); }
@@ -2037,7 +2037,7 @@ textarea { min-height: 76px; resize: vertical; }
 .calc-key.done {
   background: linear-gradient(140deg, var(--accent), var(--accent-2));
   color: #fff;
-  font-weight: 800;
+  font-weight: 600;
   box-shadow: 0 10px 24px -12px var(--accent-glow);
 }
 .calc-key.wide { padding: 15px; font-size: 1rem; }
@@ -2050,7 +2050,7 @@ textarea { min-height: 76px; resize: vertical; }
 .type-toggle.compact .toggle { padding: 9px 14px; }
 
 .manage-group { display: grid; gap: 8px; }
-.manage-label { font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; }
+.manage-label { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
 .manage-label.expense { color: var(--expense); }
 .manage-label.income { color: var(--income); }
 
@@ -2191,7 +2191,7 @@ textarea { min-height: 76px; resize: vertical; }
   place-items: center;
   background: var(--accent-soft);
   color: var(--accent);
-  font-weight: 800;
+  font-weight: 600;
 }
 .acct-badge.sm { width: 32px; height: 32px; border-radius: 9px; font-size: 0.85rem; }
 
@@ -2259,7 +2259,7 @@ textarea { min-height: 76px; resize: vertical; }
 }
 .chip.active .chip-ico { background: var(--chip-accent, var(--accent)); color: #fff; }
 
-.modal label { color: var(--text-dim); font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
+.modal label { color: var(--text-dim); font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
 .field-group { display: grid; gap: 7px; }
 .modal label .opt { color: var(--text-dim); font-weight: 700; text-transform: none; letter-spacing: 0; opacity: 0.75; }
 
@@ -2281,7 +2281,7 @@ textarea { min-height: 76px; resize: vertical; }
   padding: 11px;
   border-radius: var(--radius-sm);
   color: var(--text-muted);
-  font-weight: 800;
+  font-weight: 600;
   font-size: 0.92rem;
   border: 1px solid transparent;
   transition: background 0.14s, color 0.14s, box-shadow 0.14s;
@@ -2361,7 +2361,7 @@ textarea { min-height: 76px; resize: vertical; }
   display: grid;
   place-items: center;
   font-size: 0.82rem;
-  font-weight: 800;
+  font-weight: 600;
   background: color-mix(in srgb, var(--chip-accent, var(--accent)) 18%, transparent);
   color: var(--chip-accent, var(--accent));
 }
@@ -2783,7 +2783,7 @@ textarea { min-height: 76px; resize: vertical; }
   }
   .msum-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
   .msum-col span { color: var(--text-dim); font-size: 0.56rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.35px; }
-  .msum-col strong { font-size: 0.86rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .msum-col strong { font-size: 0.86rem; font-weight: 700; font-variant-numeric: tabular-nums; }
   .msum-col strong.income { color: var(--income); }
   .msum-col strong.expense { color: var(--expense); }
   .msum-div { width: 1px; background: var(--border-soft); align-self: stretch; margin: 2px 0; }
@@ -2822,13 +2822,13 @@ textarea { min-height: 76px; resize: vertical; }
 
   .mcard { background: var(--card); border: 1px solid var(--border-soft); border-radius: 18px; padding: 2px 12px 6px; }
   .mcard-head { display: flex; align-items: center; gap: 10px; width: 100%; background: none; border: 0; padding: 10px 0 8px; text-align: left; }
-  .mcard-day { font-size: 1.28rem; font-weight: 800; color: var(--text); letter-spacing: -0.4px; min-width: 30px; }
+  .mcard-day { font-size: 1.28rem; font-weight: 600; color: var(--text); letter-spacing: -0.4px; min-width: 30px; }
   .mcard-meta { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; align-items: flex-start; }
   .mcard-week { background: var(--surface-2); color: var(--text-muted); font-size: 0.58rem; font-weight: 700; padding: 2px 7px; border-radius: 999px; }
   .mcard-date { color: var(--text-dim); font-size: 0.62rem; }
   .mcard-total { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
   .mcard-total small { color: var(--text-dim); font-size: 0.5rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.25px; }
-  .mcard-total em { font-size: 0.78rem; font-weight: 800; font-style: normal; font-variant-numeric: tabular-nums; }
+  .mcard-total em { font-size: 0.78rem; font-weight: 600; font-style: normal; font-variant-numeric: tabular-nums; }
   .mcard-total em.income { color: var(--income); }
   .mcard-total em.expense { color: var(--expense); }
   .mcard-caret { color: var(--text-dim); width: 12px; text-align: center; font-size: 0.72rem; }
@@ -2873,7 +2873,7 @@ textarea { min-height: 76px; resize: vertical; }
     bottom: calc(84px + env(safe-area-inset-bottom));
     width: 46px; height: 46px; border-radius: 50%;
     background: var(--accent); color: #fff;
-    font-size: 1.25rem; font-weight: 800; line-height: 1;
+    font-size: 1.25rem; font-weight: 600; line-height: 1;
     border: 0;
     box-shadow: 0 10px 24px -8px var(--accent-glow);
     z-index: 45;
@@ -2898,7 +2898,7 @@ textarea { min-height: 76px; resize: vertical; }
   .cat-sheet-grab { width: 40px; height: 5px; border-radius: 3px; background: var(--border); align-self: center; margin: 2px 0 10px; }
   .cat-sheet-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
   .cat-sheet-head .modal-x { flex: 0 0 auto; }
-  .cat-sheet-title { font-size: 1rem; font-weight: 800; }
+  .cat-sheet-title { font-size: 1rem; font-weight: 600; }
   .cat-sheet-sub { color: var(--text-muted); font-size: 0.72rem; margin: 2px 0 0; }
   .cat-sheet-search { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 999px; margin-bottom: 6px; }
   .cat-sheet-search input { flex: 1; background: none; border: 0; outline: none; color: var(--text); font-size: 0.78rem; }
@@ -3085,7 +3085,7 @@ textarea { min-height: 76px; resize: vertical; }
 .pair-pin {
   margin: 0;
   font-size: 1.5rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.28em;
   font-variant-numeric: tabular-nums;
 }

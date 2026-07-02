@@ -43,9 +43,14 @@ import { ExportOptionsModal } from './components/ExportOptionsModal';
 import { SyncStatusBar } from './components/SyncStatusBar';
 import { StorageReplaceModal } from './components/StorageReplaceModal';
 import { SyncOtherDevicesPanel } from './components/syncDevices/SyncOtherDevicesPanel';
+import { CURRENCY_OPTIONS, EMOJI_CHOICES, COLOR_CHOICES, EmojiColorPicker } from './components/library/shared';
+import { CategoryEditorSheet } from './components/library/CategoryEditorSheet';
+import { AccountEditorSheet } from './components/library/AccountEditorSheet';
+import { CategoryLibraryList, AccountLibraryList } from './components/library/LibraryLists';
 import { useSyncTriggers } from './sync/useSyncTriggers';
 import { useTheme } from './theme';
 import './styles.css';
+import './styles/more-mobile.css';
 
 const NAV = SHARED_NAV;
 const TITLES: Record<string, string> = TAB_TITLES;
@@ -55,17 +60,6 @@ const SIDEBAR_COLLAPSED_KEY = 'money-sheets-sidebar-collapsed';
 const RECENT_LIMIT = 8;
 
 const todayKey = () => dateKey();
-
-const EMOJI_CHOICES = [
-  '🛒', '🍜', '🍔', '☕', '⛽', '🚌', '🚗', '✈️', '🏠', '🛠️', '👕', '🎁',
-  '🩺', '💊', '🏥', '💸', '📄', '📒', '🎓', '🎮', '🎵', '⚽', '🐾', '🌿',
-  '💡', '📱', '💳', '🍷', '🏋️', '💰', '💵', '🏦', '📦', '🧾', '📌', '🎯'
-];
-
-const COLOR_CHOICES = [
-  '#4f7cff', '#ff5d8f', '#ffb020', '#22c08b', '#9b6bff', '#ff7a45',
-  '#22c3e6', '#f2495c', '#7ed957', '#c44dff', '#34d399', '#fbbf24'
-];
 
 /** Tiny inline-SVG sparkline (line or bar) for the summary cards. */
 function Sparkline({
@@ -421,7 +415,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
       <div className="sidebar-section">
         <span className="nav-label">Menu</span>
         <nav className="side-nav">
-          {NAV.map((item) => (
+          {NAV.filter((item) => item.id !== 'accounts').map((item) => (
             <button
               key={item.id}
               className={ledger.mainTab === item.id ? 'side-link active' : 'side-link'}
@@ -468,9 +462,10 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
   );
 }
 
-function ImportButton({ asCard = false, collapsed = false }: { asCard?: boolean; collapsed?: boolean }) {
+function ImportButton({ asCard = false, collapsed = false, row = false }: { asCard?: boolean; collapsed?: boolean; row?: boolean }) {
   const { importData } = useLedger();
   const inputRef = useRef<HTMLInputElement>(null);
+  const pick = () => inputRef.current?.click();
 
   return (
     <>
@@ -485,7 +480,16 @@ function ImportButton({ asCard = false, collapsed = false }: { asCard?: boolean;
           if (file) void importData(file);
         }}
       />
-      {asCard ? (
+      {row ? (
+        <button type="button" className="more-row" onClick={pick}>
+          <span className="more-row-ico" style={{ background: 'color-mix(in srgb, var(--balance) 15%, transparent)', color: 'var(--balance)' }} aria-hidden><MoreIcon name="upload" /></span>
+          <span className="more-row-body">
+            <strong>Import CSV / Excel</strong>
+            <span className="muted">Replace all data from a backup</span>
+          </span>
+          <span className="more-row-caret" aria-hidden>›</span>
+        </button>
+      ) : asCard ? (
         <button className="action-card" onClick={() => inputRef.current?.click()}>
           <span className="ac-ico">⬆️</span>
           <strong>Import CSV / Excel</strong>
@@ -1721,51 +1725,12 @@ function AccountPicker({
   );
 }
 
-function CategoryEditPanel({ category, onClose }: { category: Category; onClose: () => void }) {
-  const { updateCategory } = useLedger();
-  const meta = getCategoryMeta(category.name);
-  const [name, setName] = useState(category.name);
-  const [emoji, setEmoji] = useState(category.emoji ?? '');
-  const [color, setColor] = useState(category.color ?? '');
-
-  async function save() {
-    if (!name.trim()) return;
-    await updateCategory(category.name, { name, emoji, color });
-    onClose();
-  }
-
-  return (
-    <div className="panel">
-      <div className="panel-head"><h3>Edit “{category.name}”</h3></div>
-      <div className="chip-editor" style={{ border: 0, padding: 0, background: 'transparent' }}>
-        <div className="chip-editor-top">
-          <span className="chip-emoji big">{emoji || meta.emoji}</span>
-          <input
-            className="chip-name-input"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Category name"
-            onKeyDown={(e) => { if (e.key === 'Enter') void save(); }}
-            autoFocus
-          />
-        </div>
-        <EmojiColorPicker emoji={emoji} color={color} onEmoji={setEmoji} onColor={setColor} />
-        <div className="chip-editor-actions">
-          <button className="link" onClick={onClose}>Cancel</button>
-          <button className="primary sm" onClick={() => void save()} disabled={!name.trim()}>Save changes</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function CategoriesView() {
   const { transactions, categories, accounts, selectedMonth, startEdit, deleteTransaction, categoryFocus, clearCategoryFocus } =
     useLedger();
   const isMobile = useIsMobile();
   const [selected, setSelected] = useState<string>(ALL_CATEGORIES);
   const [selectedAccount, setSelectedAccount] = useState<string>(ALL_ACCOUNTS);
-  const [editing, setEditing] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [accountSheetOpen, setAccountSheetOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -1777,7 +1742,6 @@ function CategoriesView() {
   useEffect(() => {
     if (categoryFocus) {
       setSelected(categoryFocus);
-      setEditing(false);
       clearCategoryFocus();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -1912,12 +1876,7 @@ function CategoriesView() {
         {currentCat ? (
           <div className="mcat-selhead">
             <span className="muted">{searchRows.length} transaction{searchRows.length === 1 ? '' : 's'} · {current}</span>
-            <button type="button" className="link accent" onClick={() => setEditing((v) => !v)}>Edit category</button>
           </div>
-        ) : null}
-
-        {editing && currentCat ? (
-          <CategoryEditPanel key={currentCat.name} category={currentCat} onClose={() => setEditing(false)} />
         ) : null}
 
         <div className="mcat-groups">
@@ -1981,7 +1940,7 @@ function CategoriesView() {
           open={sheetOpen}
           categories={sheetCategories}
           selected={selected}
-          onSelect={(name) => { setSelected(name); setEditing(false); }}
+          onSelect={(name) => setSelected(name)}
           onClose={() => setSheetOpen(false)}
         />
         <AccountFilterSheet
@@ -2005,7 +1964,7 @@ function CategoriesView() {
             value={current}
             amounts={amounts}
             allTotal={allTotal}
-            onChange={(name) => { setSelected(name); setEditing(false); }}
+            onChange={(name) => setSelected(name)}
           />
           <AccountPicker
             accounts={activeAccounts}
@@ -2014,22 +1973,8 @@ function CategoriesView() {
             allTotal={allTotal}
             onChange={setSelectedAccount}
           />
-          {currentCat ? (
-            <button
-              type="button"
-              className={`pill ${editing ? 'active' : ''}`}
-              onClick={() => setEditing((v) => !v)}
-              title="Rename or change emoji"
-            >
-              ✏️ Edit
-            </button>
-          ) : null}
         </div>
       </div>
-
-      {editing && currentCat ? (
-        <CategoryEditPanel key={currentCat.name} category={currentCat} onClose={() => setEditing(false)} />
-      ) : null}
 
       <div className="cat-hero" style={{ ['--cat-accent' as string]: heroColor }}>
         <span className="cat-hero-chip" style={{ backgroundColor: isAll ? 'var(--accent-soft)' : `${meta.color}22`, color: heroColor }}>{heroEmoji}</span>
@@ -2090,60 +2035,15 @@ function CategoriesView() {
 }
 
 function AccountStatCard({ account, balance }: { account: Account; balance: AccountBalance }) {
-  const { updateAccount } = useLedger();
   const meta = getAccountMeta(account.name);
-  const [editing, setEditing] = useState(false);
-  const [name, setName] = useState(account.name);
-  const [emoji, setEmoji] = useState(account.emoji ?? '');
-  const [color, setColor] = useState(account.color ?? '');
-  const [currency, setCurrency] = useState(account.currency);
-  const [opening, setOpening] = useState(String(account.openingBalance));
 
-  function openEdit() {
-    setName(account.name);
-    setEmoji(account.emoji ?? '');
-    setColor(account.color ?? '');
-    setCurrency(account.currency);
-    setOpening(String(account.openingBalance));
-    setEditing(true);
-  }
-
-  async function save() {
-    if (!name.trim()) return;
-    await updateAccount(account.name, { name, emoji, color, currency, openingBalance: Number(opening) || 0 });
-    setEditing(false);
-  }
-
-  if (editing) {
-    return (
-      <article className="account-card editing">
-        <div className="chip-editor" style={{ border: 0, padding: 0, background: 'transparent' }}>
-          <div className="chip-editor-top">
-            <span className="chip-emoji big">{emoji || account.name.slice(0, 1).toUpperCase()}</span>
-            <input className="chip-name-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Account name" autoFocus />
-          </div>
-          <div className="account-edit-grid">
-            <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
-              {CURRENCY_OPTIONS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-            </select>
-            <input type="number" placeholder="Opening balance" value={opening} onChange={(e) => setOpening(e.target.value)} />
-          </div>
-          <EmojiColorPicker emoji={emoji} color={color} onEmoji={setEmoji} onColor={setColor} />
-          <div className="chip-editor-actions">
-            <button className="link" onClick={() => setEditing(false)}>Cancel</button>
-            <button className="primary sm" onClick={() => void save()} disabled={!name.trim()}>Save</button>
-          </div>
-        </div>
-      </article>
-    );
-  }
-
+  // Account editing now lives exclusively in Budgets & Data → Library, so this
+  // card is read-only.
   return (
     <article className="account-card" style={{ ['--acct-accent' as string]: meta.color }}>
       <div className="acct-top">
         <AccountBadge name={account.name} />
         <h3>{account.name}</h3>
-        <button className="icon-btn card-edit" title="Rename or change emoji" onClick={openEdit}>✏️</button>
       </div>
       <strong className="acct-balance">{formatMoney(balance.balance, balance.currency)}</strong>
       <div className="acct-flows">
@@ -2207,8 +2107,14 @@ function AccountsView() {
   );
 }
 
+/** Budgets & Data tab: premium mobile hub on the PWA, classic grid on desktop. */
 function MoreView() {
-  const { budgets, transactions, selectedMonth, saveBudget, categories, beginExport, resetAllData } = useLedger();
+  const isMobile = useIsMobile();
+  return isMobile ? <MoreViewMobile /> : <MoreViewDesktop />;
+}
+
+function MoreViewDesktop() {
+  const { budgets, transactions, selectedMonth, saveBudget, categories } = useLedger();
   const month = monthKey(selectedMonth);
   const progress = budgetProgressForMonth(budgets, transactions, month);
   const expenseCategories = categories.filter((c) => c.active && c.type === 'expense');
@@ -2224,7 +2130,7 @@ function MoreView() {
       </div>
 
       <div className="more-col">
-      <ManagePanel />
+      <ManageLibraryPanel />
 
       <BudgetForm categories={expenseCategories.map((c) => c.name)} onSave={saveBudget} month={month} />
 
@@ -2256,36 +2162,432 @@ function MoreView() {
         })}
       </div>
 
-      {/* Web keeps Export / Import / Erase in the left sidebar, so this panel is
-          only shown on mobile where the sidebar is replaced by the tab bar. */}
-      <div className="panel mobile-only">
-        <h3>Backup &amp; restore</h3>
-        <p className="muted" style={{ margin: '0 0 14px', fontSize: '0.86rem', lineHeight: 1.5 }}>
-          Your data lives only on this device. Export an Excel workbook to back it up, or import a CSV or Excel
-          file. Importing replaces everything after you confirm.
-        </p>
-        <div className="action-cards">
-          <button className="action-card" onClick={() => beginExport()}>
-            <span className="ac-ico">⬇️</span>
-            <strong>Export Excel</strong>
-            <span>Download all transactions as an .xlsx workbook.</span>
-          </button>
-          <ImportButton asCard />
-          <button className="action-card danger" onClick={() => void resetAllData()}>
-            <span className="ac-ico">🗑️</span>
-            <strong>Erase all data</strong>
-            <span>Reset this device to an empty ledger. Cannot be undone.</span>
-          </button>
-        </div>
-      </div>
-
       <FeedbackPanel />
       </div>
     </div>
   );
 }
 
+/** Mobile PWA hub router: 5-card hub or a pushed sub-screen. */
+function MoreViewMobile() {
+  const { moreSubScreen } = useLedger();
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+    document.querySelector<HTMLElement>('.content')?.scrollTo?.({ top: 0 });
+  }, [moreSubScreen]);
+
+  if (moreSubScreen === 'sync-advanced') return <MoreSyncAdvancedScreen />;
+  if (moreSubScreen === 'monthly-budgets') return <MoreMonthlyBudgetsScreen />;
+  if (moreSubScreen === 'library-categories' || moreSubScreen === 'library-accounts') return <MoreLibraryScreen />;
+  return <MoreMobileHub />;
+}
+
+/** Back chevron + large title used at the top of every More sub-screen. */
+function MoreBackHeader({ title, subtitle }: { title: string; subtitle?: string }) {
+  const { setMoreSubScreen } = useLedger();
+  return (
+    <div className="more-subhead">
+      <button type="button" className="more-back" onClick={() => setMoreSubScreen(null)} aria-label="Back to Budgets & Data">‹</button>
+      <div className="more-subhead-text">
+        <h2>{title}</h2>
+        {subtitle ? <span className="muted">{subtitle}</span> : null}
+      </div>
+    </div>
+  );
+}
+
+/** One iOS-Settings-style row (icon, title, optional subtitle, trailing slot). */
+function MoreRow({
+  icon,
+  iconTint,
+  title,
+  subtitle,
+  onClick,
+  danger,
+  trailing,
+  as = 'button'
+}: {
+  icon: React.ReactNode;
+  iconTint?: string;
+  title: string;
+  subtitle?: string;
+  onClick?: () => void;
+  danger?: boolean;
+  trailing?: React.ReactNode;
+  as?: 'button' | 'div';
+}) {
+  const tintStyle = iconTint
+    ? { background: `color-mix(in srgb, ${iconTint} 15%, transparent)`, color: iconTint }
+    : undefined;
+  const inner = (
+    <>
+      <span className="more-row-ico" style={tintStyle} aria-hidden>{icon}</span>
+      <span className="more-row-body">
+        <strong>{title}</strong>
+        {subtitle ? <span className="muted">{subtitle}</span> : null}
+      </span>
+      {trailing ?? (onClick ? <span className="more-row-caret" aria-hidden>›</span> : null)}
+    </>
+  );
+  if (as === 'div') return <div className={`more-row static ${danger ? 'danger' : ''}`}>{inner}</div>;
+  return (
+    <button type="button" className={`more-row ${danger ? 'danger' : ''}`} onClick={onClick}>
+      {inner}
+    </button>
+  );
+}
+
 const DEV_EMAIL = 'dushyant.sharma1997@gmail.com';
+
+/** Thin line-style icons for the Budgets & Data hub (matches the app's NavIcon set). */
+function MoreIcon({ name, size = 20 }: { name: string; size?: number }) {
+  const p = {
+    width: size,
+    height: size,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.7,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const
+  };
+  switch (name) {
+    case 'sync':
+      return (
+        <svg {...p}>
+          <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+          <path d="M21 3v5h-5" />
+        </svg>
+      );
+    case 'qr':
+      return (
+        <svg {...p}>
+          <rect x="3" y="3" width="7" height="7" rx="1.5" />
+          <rect x="14" y="3" width="7" height="7" rx="1.5" />
+          <rect x="3" y="14" width="7" height="7" rx="1.5" />
+          <path d="M14 14h3v3M20.5 14v.02M14 20.5h.02M20.5 17.5v3.5h-3.5" />
+        </svg>
+      );
+    case 'cloud-down':
+      return (
+        <svg {...p}>
+          <path d="M7 18a4 4 0 0 1-.5-7.97A6 6 0 0 1 18 9a3.5 3.5 0 0 1 .5 6.95" />
+          <path d="M12 11v6" />
+          <path d="M9.5 14.5 12 17l2.5-2.5" />
+        </svg>
+      );
+    case 'gear':
+      return (
+        <svg {...p}>
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      );
+    case 'download':
+      return (
+        <svg {...p}>
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <path d="M7 10l5 5 5-5" />
+          <path d="M12 15V3" />
+        </svg>
+      );
+    case 'upload':
+      return (
+        <svg {...p}>
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <path d="M17 8l-5-5-5 5" />
+          <path d="M12 3v12" />
+        </svg>
+      );
+    case 'trash':
+      return (
+        <svg {...p}>
+          <path d="M3 6h18" />
+          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+          <path d="M10 11v6M14 11v6" />
+          <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+        </svg>
+      );
+    case 'repeat':
+      return (
+        <svg {...p}>
+          <path d="M17 1l4 4-4 4" />
+          <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+          <path d="M7 23l-4-4 4-4" />
+          <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+        </svg>
+      );
+    case 'star':
+      return (
+        <svg {...p}>
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14l-5-4.87 6.91-1.01L12 2z" />
+        </svg>
+      );
+    case 'target':
+      return (
+        <svg {...p}>
+          <circle cx="12" cy="12" r="9" />
+          <circle cx="12" cy="12" r="5" />
+          <circle cx="12" cy="12" r="1.5" />
+        </svg>
+      );
+    case 'grid':
+      return (
+        <svg {...p}>
+          <rect x="3" y="3" width="7" height="7" rx="1.5" />
+          <rect x="14" y="3" width="7" height="7" rx="1.5" />
+          <rect x="3" y="14" width="7" height="7" rx="1.5" />
+          <rect x="14" y="14" width="7" height="7" rx="1.5" />
+        </svg>
+      );
+    case 'card':
+      return (
+        <svg {...p}>
+          <rect x="2" y="5" width="20" height="14" rx="2.5" />
+          <path d="M2 10h20" />
+        </svg>
+      );
+    case 'mail':
+      return (
+        <svg {...p}>
+          <rect x="3" y="5" width="18" height="14" rx="2" />
+          <path d="M3 7l9 6 9-6" />
+        </svg>
+      );
+    case 'copy':
+      return (
+        <svg {...p}>
+          <rect x="9" y="9" width="12" height="12" rx="2" />
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg>
+      );
+    default:
+      return null;
+  }
+}
+
+function MoreMobileHub() {
+  const {
+    effectiveStorage,
+    refresh,
+    beginExport,
+    resetAllData,
+    setMoreSubScreen,
+    carryForward,
+    setCarryForward,
+    showcaseMode,
+    enableShowcaseMode,
+    exitShowcaseMode,
+    busy
+  } = useLedger();
+  const [copied, setCopied] = useState(false);
+
+  const storage = activeStorageDisplay(effectiveStorage);
+  const connected = effectiveStorage.effectiveMode === 'turso' && !effectiveStorage.isTursoFallback;
+  const mailto = `mailto:${DEV_EMAIL}?subject=${encodeURIComponent('Money Sheets — Feedback')}&body=${encodeURIComponent(
+    'Hi Dushyant,\n\nHere is my feedback about Money Sheets:\n\n'
+  )}`;
+
+  async function copyEmail() {
+    try {
+      await navigator.clipboard.writeText(DEV_EMAIL);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <div className="more-mobile">
+      <section className="more-card">
+        <div className="more-card-head">
+          <span className="more-card-label">Sync</span>
+          <span className={`more-status-pill ${connected ? 'ok' : 'muted'}`}>
+            <i /> {storage.title}
+          </span>
+        </div>
+        <div className="more-sync-grid">
+          <button type="button" className="more-glass" onClick={() => void refresh()} disabled={busy}>
+            <span className="more-glass-ico"><MoreIcon name="sync" size={22} /></span>
+            <span>Sync</span>
+          </button>
+          <button type="button" className="more-glass" onClick={() => setMoreSubScreen('sync-advanced')}>
+            <span className="more-glass-ico"><MoreIcon name="qr" size={22} /></span>
+            <span>QR Pair</span>
+          </button>
+          <button type="button" className="more-glass" onClick={() => beginExport()}>
+            <span className="more-glass-ico"><MoreIcon name="cloud-down" size={22} /></span>
+            <span>Backup</span>
+          </button>
+          <button type="button" className="more-glass" onClick={() => setMoreSubScreen('sync-advanced')}>
+            <span className="more-glass-ico"><MoreIcon name="gear" size={22} /></span>
+            <span>Advanced</span>
+          </button>
+        </div>
+      </section>
+
+      <section className="more-card tight">
+        <span className="more-card-label">Data</span>
+        <div className="more-rows">
+          <MoreRow icon={<MoreIcon name="download" />} iconTint="var(--income)" title="Export Excel" subtitle="Download an .xlsx backup" onClick={() => beginExport()} />
+          <ImportButton row />
+          <MoreRow icon={<MoreIcon name="trash" />} title="Reset app" subtitle="Erase all data on this device" danger onClick={() => void resetAllData()} />
+        </div>
+      </section>
+
+      <section className="more-card tight">
+        <span className="more-card-label">Preferences</span>
+        <div className="more-rows">
+          <MoreRow
+            icon={<MoreIcon name="repeat" />}
+            iconTint="var(--accent)"
+            title="Monthly carry forward"
+            subtitle="Start each month from last balance"
+            as="div"
+            trailing={
+              <button
+                type="button"
+                className={`switch ${carryForward ? 'on' : ''}`}
+                role="switch"
+                aria-checked={carryForward}
+                aria-label="Monthly carry forward"
+                disabled={busy}
+                onClick={() => void setCarryForward(!carryForward)}
+              >
+                <span className="switch-knob" />
+              </button>
+            }
+          />
+          <MoreRow
+            icon={<MoreIcon name="star" />}
+            iconTint="var(--warn)"
+            title="Showcase mode"
+            subtitle="Load demo data for screenshots"
+            as="div"
+            trailing={
+              showcaseMode ? (
+                <button type="button" className="ghost sm" disabled={busy} onClick={() => void exitShowcaseMode()}>Exit</button>
+              ) : (
+                <button type="button" className="ghost sm outlined" disabled={busy} onClick={() => void enableShowcaseMode()}>Enable</button>
+              )
+            }
+          />
+          <MoreRow icon={<MoreIcon name="target" />} iconTint="var(--accent)" title="Monthly budgets" subtitle="Set and track category budgets" onClick={() => setMoreSubScreen('monthly-budgets')} />
+        </div>
+      </section>
+
+      <section className="more-card tight">
+        <span className="more-card-label">Library</span>
+        <div className="more-rows">
+          <MoreRow icon={<MoreIcon name="grid" />} iconTint="var(--accent)" title="Categories" subtitle="Add, edit and organise categories" onClick={() => setMoreSubScreen('library-categories')} />
+          <MoreRow icon={<MoreIcon name="card" />} iconTint="var(--balance)" title="Accounts" subtitle="Manage accounts and balances" onClick={() => setMoreSubScreen('library-accounts')} />
+        </div>
+      </section>
+
+      <section className="more-card">
+        <span className="more-card-label">Support</span>
+        <div className="more-support">
+          <a className="primary" href={mailto}><MoreIcon name="mail" size={18} /> Contact developer</a>
+          <button type="button" className="ghost" onClick={() => void copyEmail()}><MoreIcon name="copy" size={18} /> {copied ? 'Copied' : 'Copy email'}</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function MoreSyncAdvancedScreen() {
+  return (
+    <div className="more-mobile more-subscreen">
+      <MoreBackHeader title="Sync & storage" subtitle="Pair devices and switch storage" />
+      <SyncOtherDevicesPanel />
+      <StorageSettingsPanel />
+    </div>
+  );
+}
+
+function MoreMonthlyBudgetsScreen() {
+  const { budgets, transactions, selectedMonth, saveBudget, categories } = useLedger();
+  const month = monthKey(selectedMonth);
+  const progress = budgetProgressForMonth(budgets, transactions, month);
+  const expenseCategories = categories.filter((c) => c.active && c.type === 'expense');
+
+  return (
+    <div className="more-mobile more-subscreen">
+      <MoreBackHeader title="Monthly budgets" subtitle={monthTitle(selectedMonth.getFullYear(), selectedMonth.getMonth())} />
+      <BudgetForm categories={expenseCategories.map((c) => c.name)} onSave={saveBudget} month={month} />
+      <div className="panel">
+        <div className="panel-head"><h3>Budget progress</h3></div>
+        {progress.length === 0 ? <p className="muted">No budgets set for this month.</p> : null}
+        {progress.map((row) => {
+          const meta = getCategoryMeta(row.category);
+          const pct = Math.min(row.percent, 100);
+          return (
+            <div className={`budget-row ${row.overBudget ? 'over' : ''}`} key={row.category}>
+              <div className="b-head">
+                <strong>{meta.emoji} {row.category}</strong>
+                <span className={row.overBudget ? 'badge danger' : row.percent >= 80 ? 'badge' : 'badge good'}>
+                  {row.overBudget ? 'Over budget' : `${row.percent.toFixed(0)}%`}
+                </span>
+              </div>
+              <div className="bar-track budget">
+                <div
+                  className={`bar-fill ${row.overBudget ? 'over' : ''}`}
+                  style={{ width: `${pct}%`, backgroundColor: row.overBudget ? 'var(--danger)' : meta.color }}
+                />
+              </div>
+              <p className="muted" style={{ margin: 0, fontSize: '0.78rem' }}>
+                {formatMoney(row.spent)} of {formatMoney(row.budget)} · {formatMoney(Math.max(row.remaining, 0))} left
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function MoreLibraryScreen() {
+  const { moreSubScreen, setMoreSubScreen } = useLedger();
+  const tab: 'categories' | 'accounts' = moreSubScreen === 'library-accounts' ? 'accounts' : 'categories';
+  const [search, setSearch] = useState('');
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [editingAccount, setEditingAccount] = useState<Account | null>(null);
+  const [adding, setAdding] = useState(false);
+
+  return (
+    <div className="more-mobile more-subscreen library-screen">
+      <MoreBackHeader title="Library" subtitle="Categories & accounts" />
+
+      <div className="more-seg">
+        <button type="button" className={tab === 'categories' ? 'on' : ''} onClick={() => { setMoreSubScreen('library-categories'); setSearch(''); }}>Categories</button>
+        <button type="button" className={tab === 'accounts' ? 'on' : ''} onClick={() => { setMoreSubScreen('library-accounts'); setSearch(''); }}>Accounts</button>
+      </div>
+
+      <div className="library-search">
+        <span aria-hidden>🔍</span>
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={tab === 'categories' ? 'Search categories' : 'Search accounts'}
+        />
+        {search ? <button type="button" className="library-search-clear" aria-label="Clear search" onClick={() => setSearch('')}>✕</button> : null}
+      </div>
+
+      {tab === 'categories'
+        ? <CategoryLibraryList search={search} onEdit={setEditingCategory} />
+        : <AccountLibraryList search={search} onEdit={setEditingAccount} />}
+
+      <button type="button" className="more-fab" aria-label={tab === 'categories' ? 'New category' : 'New account'} onClick={() => setAdding(true)}>＋</button>
+
+      {editingCategory ? <CategoryEditorSheet category={editingCategory} onClose={() => setEditingCategory(null)} /> : null}
+      {editingAccount ? <AccountEditorSheet account={editingAccount} onClose={() => setEditingAccount(null)} /> : null}
+      {adding && tab === 'categories' ? <CategoryEditorSheet onClose={() => setAdding(false)} /> : null}
+      {adding && tab === 'accounts' ? <AccountEditorSheet onClose={() => setAdding(false)} /> : null}
+    </div>
+  );
+}
 
 function FeedbackPanel() {
   const [copied, setCopied] = useState(false);
@@ -2569,184 +2871,55 @@ function SettingsPanel() {
   );
 }
 
-function ManagePanel() {
+/**
+ * Desktop "Budgets & Data" library manager: ss6-style grouped list with a
+ * search box and centred modal editors. Replaces the old chip-based manager and
+ * is the single place to add/edit/remove categories and accounts on web.
+ */
+const DESKTOP_LIBRARY_LIMIT = 6;
+
+function ManageLibraryPanel() {
   const [tab, setTab] = useState<'categories' | 'accounts'>('categories');
+  const [search, setSearch] = useState('');
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [editingAccount, setEditingAccount] = useState<Account | null>(null);
+  const [adding, setAdding] = useState(false);
 
   return (
-    <div className="panel">
+    <div className="panel manage-library">
       <div className="panel-head">
-        <h3>Manage categories &amp; accounts</h3>
+        <h3>Categories &amp; accounts</h3>
         <div className="pill-row">
-          <button className={tab === 'categories' ? 'pill active' : 'pill'} onClick={() => setTab('categories')}>Categories</button>
-          <button className={tab === 'accounts' ? 'pill active' : 'pill'} onClick={() => setTab('accounts')}>Accounts</button>
+          <button className={tab === 'categories' ? 'pill active' : 'pill'} onClick={() => { setTab('categories'); setSearch(''); }}>Categories</button>
+          <button className={tab === 'accounts' ? 'pill active' : 'pill'} onClick={() => { setTab('accounts'); setSearch(''); }}>Accounts</button>
         </div>
       </div>
-      {tab === 'categories' ? <CategoryManager /> : <AccountManager />}
-    </div>
-  );
-}
-
-function EmojiColorPicker({
-  emoji,
-  color,
-  onEmoji,
-  onColor
-}: {
-  emoji: string;
-  color: string;
-  onEmoji: (value: string) => void;
-  onColor: (value: string) => void;
-}) {
-  return (
-    <>
-      <div className="swatch-row">
-        {COLOR_CHOICES.map((c) => (
-          <button
-            key={c}
-            type="button"
-            className={`swatch ${color === c ? 'on' : ''}`}
-            style={{ backgroundColor: c }}
-            title={c}
-            aria-label={`Use colour ${c}`}
-            onClick={() => onColor(c)}
+      <div className="library-toolbar">
+        <div className="search-field">
+          <span className="search-ico" aria-hidden>🔍</span>
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={tab === 'categories' ? 'Search categories…' : 'Search accounts…'}
+            aria-label="Search library"
           />
-        ))}
-        <button
-          type="button"
-          className={`swatch clear ${!color ? 'on' : ''}`}
-          title="Default colour"
-          aria-label="Use default colour"
-          onClick={() => onColor('')}
-        >
-          ∅
-        </button>
+          {search ? <button type="button" className="search-clear" aria-label="Clear search" onClick={() => setSearch('')}>×</button> : null}
+        </div>
+        <button type="button" className="primary sm" onClick={() => setAdding(true)}>+ Add</button>
       </div>
-      <div className="emoji-palette">
-        {EMOJI_CHOICES.map((e) => (
-          <button
-            key={e}
-            type="button"
-            className={`emoji-pick ${emoji === e ? 'on' : ''}`}
-            onClick={() => onEmoji(e)}
-          >
-            {e}
-          </button>
-        ))}
-      </div>
-    </>
-  );
-}
 
-function CategoryItem({ category }: { category: Category }) {
-  const { updateCategory, deleteCategory } = useLedger();
-  const meta = getCategoryMeta(category.name);
-  const [editing, setEditing] = useState(false);
-  const [name, setName] = useState(category.name);
-  const [emoji, setEmoji] = useState(category.emoji ?? '');
-  const [color, setColor] = useState(category.color ?? '');
+      {tab === 'categories'
+        ? <CategoryLibraryList search={search} limit={DESKTOP_LIBRARY_LIMIT} onEdit={setEditingCategory} />
+        : <AccountLibraryList search={search} limit={DESKTOP_LIBRARY_LIMIT} onEdit={setEditingAccount} />}
 
-  function open() {
-    setName(category.name);
-    setEmoji(category.emoji ?? '');
-    setColor(category.color ?? '');
-    setEditing(true);
-  }
-
-  async function save() {
-    if (!name.trim()) return;
-    await updateCategory(category.name, { name, emoji, color });
-    setEditing(false);
-  }
-
-  if (!editing) {
-    return (
-      <span className="chip-item" style={{ ['--chip-accent' as string]: meta.color }}>
-        <span className="chip-emoji">{meta.emoji}</span>
-        <span className="chip-name">{category.name}</span>
-        <button className="chip-btn" title="Edit" onClick={open}>✏️</button>
-        <button className="chip-btn danger" title="Remove" onClick={() => void deleteCategory(category.name)}>×</button>
-      </span>
-    );
-  }
-
-  return (
-    <div className="chip-editor">
-      <div className="chip-editor-top">
-        <span className="chip-emoji big">{emoji || meta.emoji}</span>
-        <input
-          className="chip-name-input"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Category name"
-          onKeyDown={(e) => { if (e.key === 'Enter') void save(); }}
-          autoFocus
-        />
-      </div>
-      <EmojiColorPicker emoji={emoji} color={color} onEmoji={setEmoji} onColor={setColor} />
-      <div className="chip-editor-actions">
-        <button className="link" onClick={() => setEditing(false)}>Cancel</button>
-        <button className="primary sm" onClick={() => void save()} disabled={!name.trim()}>Save</button>
-      </div>
+      {editingCategory ? <CategoryEditorSheet category={editingCategory} onClose={() => setEditingCategory(null)} /> : null}
+      {editingAccount ? <AccountEditorSheet account={editingAccount} onClose={() => setEditingAccount(null)} /> : null}
+      {adding && tab === 'categories' ? <CategoryEditorSheet onClose={() => setAdding(false)} /> : null}
+      {adding && tab === 'accounts' ? <AccountEditorSheet onClose={() => setAdding(false)} /> : null}
     </div>
   );
 }
-
-function CategoryManager() {
-  const { categories, addCategory } = useLedger();
-  const [name, setName] = useState('');
-  const [type, setType] = useState<TransactionType>('expense');
-
-  const expense = categories.filter((c) => c.type === 'expense');
-  const income = categories.filter((c) => c.type === 'income');
-
-  async function submit() {
-    if (!name.trim()) return;
-    await addCategory(name, type);
-    setName('');
-  }
-
-  return (
-    <div className="manage">
-      <div className="manage-form">
-        <input
-          placeholder="New category name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') void submit(); }}
-        />
-        <div className="type-toggle compact">
-          <button className={type === 'expense' ? 'toggle active expense' : 'toggle'} onClick={() => setType('expense')}>Expense</button>
-          <button className={type === 'income' ? 'toggle active income' : 'toggle'} onClick={() => setType('income')}>Income</button>
-        </div>
-        <button className="primary" onClick={() => void submit()} disabled={!name.trim()}>Add</button>
-      </div>
-
-      <div className="manage-group">
-        <span className="manage-label expense">Expense · {expense.length}</span>
-        <div className="chip-list">
-          {expense.length === 0 ? <span className="muted">None yet.</span> : null}
-          {expense.map((c) => <CategoryItem key={c.name} category={c} />)}
-        </div>
-      </div>
-
-      <div className="manage-group">
-        <span className="manage-label income">Income · {income.length}</span>
-        <div className="chip-list">
-          {income.length === 0 ? <span className="muted">None yet.</span> : null}
-          {income.map((c) => <CategoryItem key={c.name} category={c} />)}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const CURRENCY_OPTIONS = [
-  { value: 'INR', label: 'INR ₹' },
-  { value: 'USD', label: 'USD $' },
-  { value: 'EUR', label: 'EUR €' },
-  { value: 'GBP', label: 'GBP £' },
-  { value: 'JPY', label: 'JPY ¥' }
-];
 
 function AccountBadge({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' }) {
   const meta = getAccountMeta(name);
@@ -2757,113 +2930,6 @@ function AccountBadge({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' 
     >
       {meta.emoji || name.slice(0, 1).toUpperCase()}
     </span>
-  );
-}
-
-function AccountItem({ account, balance }: { account: Account; balance: number }) {
-  const { updateAccount, deleteAccount } = useLedger();
-  const [editing, setEditing] = useState(false);
-  const [name, setName] = useState(account.name);
-  const [emoji, setEmoji] = useState(account.emoji ?? '');
-  const [color, setColor] = useState(account.color ?? '');
-  const [currency, setCurrency] = useState(account.currency);
-  const [opening, setOpening] = useState(String(account.openingBalance));
-
-  function open() {
-    setName(account.name);
-    setEmoji(account.emoji ?? '');
-    setColor(account.color ?? '');
-    setCurrency(account.currency);
-    setOpening(String(account.openingBalance));
-    setEditing(true);
-  }
-
-  async function save() {
-    if (!name.trim()) return;
-    await updateAccount(account.name, { name, emoji, color, currency, openingBalance: Number(opening) || 0 });
-    setEditing(false);
-  }
-
-  if (!editing) {
-    return (
-      <div className="account-row">
-        <AccountBadge name={account.name} size="sm" />
-        <div className="account-row-body">
-          <strong>{account.name}</strong>
-          <span className="muted">{account.currency} · opening {formatMoney(account.openingBalance, account.currency)}</span>
-        </div>
-        <strong className="balance">{formatMoney(balance, account.currency)}</strong>
-        <button className="icon-btn" title="Edit account" onClick={open}>✏️</button>
-        <button className="icon-btn danger" title="Remove account" onClick={() => void deleteAccount(account.name)}>🗑</button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="chip-editor account">
-      <div className="chip-editor-top">
-        <span className="chip-emoji big">{emoji || account.name.slice(0, 1).toUpperCase()}</span>
-        <input
-          className="chip-name-input"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Account name"
-          autoFocus
-        />
-      </div>
-      <div className="account-edit-grid">
-        <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
-          {CURRENCY_OPTIONS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-        </select>
-        <input type="number" placeholder="Opening balance" value={opening} onChange={(e) => setOpening(e.target.value)} />
-      </div>
-      <EmojiColorPicker emoji={emoji} color={color} onEmoji={setEmoji} onColor={setColor} />
-      <div className="chip-editor-actions">
-        <button className="link" onClick={() => setEditing(false)}>Cancel</button>
-        <button className="primary sm" onClick={() => void save()} disabled={!name.trim()}>Save</button>
-      </div>
-    </div>
-  );
-}
-
-function AccountManager() {
-  const { accounts, transactions, addAccount } = useLedger();
-  const balances = computeAccountBalances(accounts, transactions);
-  const [name, setName] = useState('');
-  const [currency, setCurrency] = useState('INR');
-  const [opening, setOpening] = useState('');
-
-  async function submit() {
-    if (!name.trim()) return;
-    await addAccount(name, currency, opening);
-    setName('');
-    setOpening('');
-  }
-
-  return (
-    <div className="manage">
-      <div className="manage-form accounts">
-        <input
-          placeholder="New account name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') void submit(); }}
-        />
-        <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
-          {CURRENCY_OPTIONS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-        </select>
-        <input type="number" placeholder="Opening balance" value={opening} onChange={(e) => setOpening(e.target.value)} />
-        <button className="primary" onClick={() => void submit()} disabled={!name.trim()}>Add</button>
-      </div>
-
-      <div className="account-rows">
-        {accounts.length === 0 ? <span className="muted">No accounts yet.</span> : null}
-        {accounts.map((account) => {
-          const balance = balances.find((b) => b.name === account.name)?.balance ?? account.openingBalance;
-          return <AccountItem key={account.name} account={account} balance={balance} />;
-        })}
-      </div>
-    </div>
   );
 }
 
@@ -3168,7 +3234,7 @@ function AddModal() {
     busy,
     saveTransaction,
     cancelEdit,
-    setMainTab
+    openMoreLibrary
   } = useLedger();
 
   const [showCalc, setShowCalc] = useState(false);
@@ -3198,9 +3264,13 @@ function AddModal() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.type, form.category, categories]);
 
-  const goManage = () => {
+  const goManageCategories = () => {
     cancelEdit();
-    setMainTab('more');
+    openMoreLibrary('categories');
+  };
+  const goManageAccounts = () => {
+    cancelEdit();
+    openMoreLibrary('accounts');
   };
 
   const noteLen = (form.note ?? '').length;
@@ -3299,7 +3369,7 @@ function AddModal() {
           value={form.category}
           onChange={(category) => setForm({ ...form, category })}
           transactions={transactions}
-          onManage={goManage}
+          onManage={goManageCategories}
         />
 
         <AddAccountPicker
@@ -3307,7 +3377,7 @@ function AddModal() {
           value={form.account}
           onChange={(a) => setForm({ ...form, account: a.name, currency: a.currency })}
           transactions={transactions}
-          onManage={goManage}
+          onManage={goManageAccounts}
         />
 
         <div className="field-group">

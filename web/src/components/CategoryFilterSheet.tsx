@@ -74,7 +74,6 @@ export function CategoryFilterSheet({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search categories"
-            autoFocus
           />
         </div>
         <div className="cat-sheet-list">
